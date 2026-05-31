@@ -1,0 +1,172 @@
+package auth
+
+import (
+	"context"
+	"encoding/hex"
+	"testing"
+	"time"
+
+	"pgregory.net/rapid"
+)
+
+func TestProperty_SessionTokenUniquenessAndEntropy(t *testing.T) {
+	t.Parallel()
+	rapid.Check(t, func(t *rapid.T) {
+		n := rapid.IntRange(2, 20).Draw(t, "n")
+		tokens := make(map[string]struct{}, n)
+		hashes := make(map[string]struct{}, n)
+
+		for i := range n {
+			plaintext, hash, err := GenerateSessionToken()
+			if err != nil {
+				t.Fatalf("GenerateSessionToken[%d] error: %v", i, err)
+			}
+
+			raw, err := hex.DecodeString(plaintext)
+			if err != nil {
+				t.Fatalf("token is not valid hex: %v", err)
+			}
+			if len(raw) < 32 {
+				t.Fatalf("token raw length %d < 32", len(raw))
+			}
+			if plaintext == hash {
+				t.Fatalf("hash equals plaintext")
+			}
+			if _, dup := tokens[plaintext]; dup {
+				t.Fatalf("duplicate token at index %d", i)
+			}
+			tokens[plaintext] = struct{}{}
+			if _, dup := hashes[hash]; dup {
+				t.Fatalf("duplicate hash at index %d", i)
+			}
+			hashes[hash] = struct{}{}
+		}
+	})
+}
+
+func TestProperty_SessionExpiryEnforcement(t *testing.T) {
+	t.Parallel()
+	rapid.Check(t, func(t *rapid.T) {
+		idleTimeout := time.Duration(rapid.Int64Range(int64(time.Minute), int64(30*24*time.Hour)).Draw(t, "idleTimeout"))
+		absTimeout := time.Duration(rapid.Int64Range(int64(time.Minute), int64(30*24*time.Hour)).Draw(t, "absTimeout"))
+
+		now := time.Now()
+		lastActivityAge := time.Duration(rapid.Int64Range(0, int64(60*24*time.Hour)).Draw(t, "lastActivityAge"))
+		createdAge := time.Duration(rapid.Int64Range(0, int64(60*24*time.Hour)).Draw(t, "createdAge"))
+
+		if createdAge < lastActivityAge {
+			createdAge, lastActivityAge = lastActivityAge, createdAge
+		}
+
+		sess := &Session{
+			CreatedAt:    now.Add(-createdAge),
+			LastActivity: now.Add(-lastActivityAge),
+		}
+
+		hasOIDC := rapid.Bool().Draw(t, "hasOIDC")
+		var oidcExpired bool
+		if hasOIDC {
+			oidcOffset := time.Duration(rapid.Int64Range(int64(-30*24*time.Hour), int64(30*24*time.Hour)).Draw(t, "oidcOffset"))
+			expiry := now.Add(oidcOffset)
+			sess.OIDCExpiry = &expiry
+			oidcExpired = now.After(expiry)
+		}
+
+		idleExpired := lastActivityAge > idleTimeout
+		absExpired := createdAge > absTimeout
+
+		err := ValidateSession(sess, idleTimeout, absTimeout, now)
+
+		if idleExpired || absExpired || oidcExpired {
+			if err == nil {
+				t.Fatalf("expected ErrSessionExpired")
+			}
+		} else {
+			if err != nil {
+				t.Fatalf("expected valid session, got: %v", err)
+			}
+		}
+	})
+}
+
+func TestProperty_SessionCleanupCompleteness(t *testing.T) {
+	t.Parallel()
+	rapid.Check(t, func(rt *rapid.T) {
+		db := newFakeSessionStore()
+		ctx := context.Background()
+
+		idleTimeout := time.Duration(rapid.Int64Range(int64(10*time.Minute), int64(24*time.Hour)).Draw(rt, "idleTimeout"))
+		absTimeout := time.Duration(rapid.Int64Range(int64(10*time.Minute), int64(7*24*time.Hour)).Draw(rt, "absTimeout"))
+
+		now := time.Now()
+
+		user := &User{Username: "testuser", PasswordHash: "dummy", Role: "admin", Enabled: true}
+		if err := db.CreateUser(ctx, user); err != nil {
+			rt.Fatalf("CreateUser: %v", err)
+		}
+
+		nSessions := rapid.IntRange(1, 15).Draw(rt, "nSessions")
+		var validHashes []string
+
+		for i := range nSessions {
+			expired := rapid.Bool().Draw(rt, "expired")
+
+			var createdAt, lastActivity time.Time
+			if expired {
+				triggerIdle := rapid.Bool().Draw(rt, "triggerIdle")
+				if triggerIdle {
+					extra := time.Duration(rapid.Int64Range(int64(time.Second), int64(24*time.Hour)).Draw(rt, "idleExtra"))
+					lastActivity = now.Add(-idleTimeout - extra)
+					createdAt = lastActivity.Add(-time.Duration(rapid.Int64Range(0, int64(24*time.Hour)).Draw(rt, "createdBefore")))
+				} else {
+					extra := time.Duration(rapid.Int64Range(int64(time.Second), int64(24*time.Hour)).Draw(rt, "absExtra"))
+					createdAt = now.Add(-absTimeout - extra)
+					lastActivity = now.Add(-time.Duration(rapid.Int64Range(0, int64(idleTimeout/4)).Draw(rt, "recentActivity")))
+				}
+			} else {
+				maxAge := max(min(idleTimeout/2, absTimeout/2), time.Second)
+				age := time.Duration(rapid.Int64Range(0, int64(maxAge)).Draw(rt, "validAge"))
+				lastActivity = now.Add(-age)
+				createdAt = now.Add(-age)
+			}
+
+			_, hash, err := GenerateSessionToken()
+			if err != nil {
+				rt.Fatalf("GenerateSessionToken[%d]: %v", i, err)
+			}
+
+			if err := db.CreateSession(ctx, &Session{
+				TokenHash: hash, UserID: user.ID, AuthMethod: "password",
+				IPAddress: "127.0.0.1", CreatedAt: createdAt, LastActivity: lastActivity,
+			}); err != nil {
+				rt.Fatalf("CreateSession[%d]: %v", i, err)
+			}
+
+			if !expired {
+				validHashes = append(validHashes, hash)
+			}
+		}
+
+		if _, err := db.CleanupExpiredSessions(ctx, now, idleTimeout, absTimeout); err != nil {
+			rt.Fatalf("CleanupExpiredSessions: %v", err)
+		}
+
+		for _, h := range validHashes {
+			s, err := db.GetSessionByHash(ctx, h)
+			if err != nil {
+				rt.Fatalf("GetSessionByHash(%s): %v", h, err)
+			}
+			if s == nil {
+				rt.Fatalf("valid session %s was deleted", h)
+			}
+		}
+
+		deleted2, err := db.CleanupExpiredSessions(ctx, now, idleTimeout, absTimeout)
+		if err != nil {
+			rt.Fatalf("second cleanup: %v", err)
+		}
+		if deleted2 != 0 {
+			rt.Fatalf("second cleanup deleted %d (expected 0)", deleted2)
+		}
+	})
+}
