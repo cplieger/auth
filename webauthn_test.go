@@ -45,6 +45,7 @@ func TestProperty_WebAuthnCredentialStorageRoundTrip(t *testing.T) {
 		}
 		if got == nil {
 			rt.Fatal("got nil")
+			return
 		}
 		if !bytes.Equal(got.CredentialID, credID) {
 			rt.Fatal("CredentialID mismatch")

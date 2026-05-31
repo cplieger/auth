@@ -2,7 +2,7 @@ package auth
 
 import (
 	"context"
-	"crypto/sha1" //nolint:gosec
+	"crypto/sha1"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +22,7 @@ func (rt *hibpRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	rt.gotAddPadding = req.Header.Get("Add-Padding")
 	rebased, _ := http.NewRequest(req.Method, rt.server.URL+req.URL.Path, http.NoBody)
 	rebased.Header = req.Header
-	return rt.server.Client().Do(rebased) //nolint:wrapcheck
+	return rt.server.Client().Do(rebased) //nolint:wrapcheck // test inspects the raw error
 }
 
 func newHibpFake(t *testing.T, respByPrefix map[string]string) *http.Client {

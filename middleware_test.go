@@ -93,7 +93,7 @@ func TestProperty_LastAuthMethodGuard(t *testing.T) {
 			viable++
 		}
 
-		methods := []AuthMethod{MethodPassword, MethodPasskey, MethodOIDC}
+		methods := []Method{MethodPassword, MethodPasskey, MethodOIDC}
 		for _, method := range methods {
 			canDisable := CanDisableAuthMethod(method, hasPassword, passkeyCount, oidcEnabled, oidcLinked)
 

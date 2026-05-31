@@ -24,7 +24,7 @@ type Authenticator struct {
 // syntheticAdminUser is the user injected when BypassAuth is true.
 var syntheticAdminUser = &User{
 	ID:       0,
-	Username: "admin",
+	Username: string(RoleAdmin),
 	Role:     RoleAdmin,
 	Enabled:  true,
 }
@@ -101,7 +101,7 @@ func ValidateRedirectURI(uri string) string {
 
 // CanDisableAuthMethod checks whether disabling the given auth method would
 // leave the user with no viable authentication method.
-func CanDisableAuthMethod(method AuthMethod, hasPassword bool, passkeyCount int, oidcEnabled, oidcLinked bool) bool {
+func CanDisableAuthMethod(method Method, hasPassword bool, passkeyCount int, oidcEnabled, oidcLinked bool) bool {
 	remaining := 0
 	if method != MethodPassword && hasPassword {
 		remaining++

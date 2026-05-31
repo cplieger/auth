@@ -11,6 +11,9 @@ const (
 	CookieNameHTTP   = "sfx_session"
 )
 
+// protoHTTPS is the HTTPS protocol identifier used in forwarded-proto checks.
+const protoHTTPS = "https"
+
 // IsBrowserRequest returns true if the request appears to be from a browser
 // (Accept header contains text/html and no X-API-Key header).
 func IsBrowserRequest(r *http.Request) bool {
@@ -22,7 +25,7 @@ func IsBrowserRequest(r *http.Request) bool {
 
 // isHTTPS returns true if the request arrived over HTTPS.
 func isHTTPS(r *http.Request) bool {
-	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == protoHTTPS
 }
 
 // SessionCookieName returns the appropriate cookie name based on whether

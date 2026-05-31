@@ -2,15 +2,15 @@ package auth
 
 import "time"
 
-// AuthMethod is a typed identifier for the authentication mechanism used
+// Method is a typed identifier for the authentication mechanism used
 // to establish a session.
-type AuthMethod string
+type Method string
 
 // Auth method identifiers stored in sessions and used for method guards.
 const (
-	MethodPassword AuthMethod = "password"
-	MethodPasskey  AuthMethod = "passkey"
-	MethodOIDC     AuthMethod = "oidc"
+	MethodPassword Method = "password"
+	MethodPasskey  Method = "passkey"
+	MethodOIDC     Method = "oidc"
 )
 
 // Role is a typed string identifying a user's authorization level.
@@ -43,7 +43,7 @@ type Session struct {
 	LastActivity time.Time  `json:"last_activity"`
 	OIDCExpiry   *time.Time `json:"oidc_expiry,omitempty"`
 	TokenHash    string     `json:"-"`
-	AuthMethod   AuthMethod `json:"auth_method"`
+	AuthMethod   Method     `json:"auth_method"`
 	IPAddress    string     `json:"ip_address"`
 	UserID       int64      `json:"user_id"`
 }
