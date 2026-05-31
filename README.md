@@ -65,5 +65,19 @@ func main() {
 - `SessionStore` / `WebAuthnStore` — interfaces for consumer to implement
 - `store.AuthStore` — composite interface (subpackage `github.com/cplieger/auth/store`)
 
+## Subpackages
+
+### `auth/ratelimit`
+
+Dual sliding-window per-IP + per-account authentication brute-force rate limiter (OWASP ASVS 2.2.1). Standard library only (`context`, `sync`, `time`).
+
+```go
+rl := ratelimit.NewRateLimiter(ctx, ratelimit.DefaultConfig())
+defer rl.Stop()
+if allowed, retryAfter := rl.Allow(clientIP, username); !allowed {
+    // reject; retry after retryAfter
+}
+```
+
 ## License
 GPL-3.0 — see [LICENSE](LICENSE).
