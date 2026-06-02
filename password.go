@@ -1,5 +1,8 @@
-// Package auth implements authentication logic: password hashing (Argon2id),
-// WebAuthn, OIDC, sessions, API keys, and RBAC middleware.
+// Package auth implements authentication primitives: password hashing
+// (Argon2id in PHC string format), WebAuthn/FIDO2 passkey ceremonies, OIDC
+// provider integration with PKCE, session management with idle/absolute
+// timeouts, API key generation and verification, and role-based access
+// control helpers.
 package auth
 
 import (
@@ -25,6 +28,7 @@ const (
 
 // DummyHash returns a pre-computed Argon2id hash used by the login handler
 // to equalize timing when the username doesn't exist (H2 mitigation).
+// The hash is computed lazily on first call via sync.Once.
 func DummyHash() string {
 	dummyHashOnce.Do(func() {
 		h, err := HashPassword("dummy-init-password")
@@ -42,6 +46,8 @@ var (
 )
 
 // HashPassword hashes a password using Argon2id with OWASP parameters.
+// Returns the hash in PHC string format:
+// $argon2id$v=19$m=19456,t=2,p=1$<base64-salt>$<base64-hash>
 func HashPassword(password string) (string, error) {
 	salt := make([]byte, argonSaltLen)
 	if _, err := rand.Read(salt); err != nil {
@@ -78,6 +84,18 @@ type phcParams struct {
 	keyLen             uint32
 }
 
+// NeedsRehash reports whether the encoded hash was produced with parameters
+// different from the current OWASP-recommended defaults. Returns true if the
+// hash is invalid or uses outdated parameters.
+func NeedsRehash(encodedHash string) bool {
+	p, err := parsePHC(encodedHash)
+	if err != nil {
+		return true
+	}
+	return p.memory != argonMemory || p.iterations != argonIterations ||
+		p.parallelism != argonParallelism || p.keyLen != argonKeyLen
+}
+
 // parsePHC extracts parameters from a PHC-format Argon2id hash string.
 func parsePHC(encoded string) (phcParams, error) {
 	parts := strings.Split(encoded, "$")
@@ -110,5 +128,17 @@ func parsePHC(encoded string) (phcParams, error) {
 	}
 
 	p.keyLen = uint32(len(p.key)) //nolint:gosec // G115: key length bounded by argon2 params
+
+	// Reject params that would panic inside argon2.IDKey.
+	if p.iterations < 1 {
+		return phcParams{}, errors.New("auth: invalid PHC hash: iterations must be >= 1")
+	}
+	if p.parallelism < 1 {
+		return phcParams{}, errors.New("auth: invalid PHC hash: parallelism must be >= 1")
+	}
+	if p.keyLen < 1 {
+		return phcParams{}, errors.New("auth: invalid PHC hash: key must not be empty")
+	}
+
 	return p, nil
 }

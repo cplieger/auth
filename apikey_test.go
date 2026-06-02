@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"testing"
+	"time"
 
 	"pgregory.net/rapid"
 )
@@ -14,7 +15,7 @@ import (
 func TestProperty_APIKeyHashVerificationRoundTrip(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(t *rapid.T) {
-		plaintext, returnedHash, _, _, err := GenerateAPIKey()
+		plaintext, returnedHash, _, _, err := GenerateAPIKey("ak_")
 		if err != nil {
 			t.Fatalf("GenerateAPIKey error: %v", err)
 		}
@@ -43,15 +44,15 @@ func TestProperty_APIKeyFormatAndUniqueness(t *testing.T) {
 		hashes := make(map[string]struct{}, n)
 
 		for i := range n {
-			plaintext, hash, prefix, suffix, err := GenerateAPIKey()
+			plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
 			if err != nil {
 				t.Fatalf("GenerateAPIKey[%d] error: %v", i, err)
 			}
 
-			if len(plaintext) < 4 || plaintext[:4] != "sfx_" {
-				t.Fatalf("key does not start with sfx_")
+			if len(plaintext) < 3 || plaintext[:3] != "ak_" {
+				t.Fatalf("key does not start with ak_")
 			}
-			randomPart := plaintext[4:]
+			randomPart := plaintext[3:]
 			if len(randomPart) < 64 {
 				t.Fatalf("random portion length %d < 64", len(randomPart))
 			}
@@ -86,7 +87,7 @@ func TestVerifyAPIKey_error_paths(t *testing.T) {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	plaintext, hash, prefix, suffix, err := GenerateAPIKey()
+	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
 	if err != nil {
 		t.Fatalf("GenerateAPIKey: %v", err)
 	}
@@ -100,7 +101,7 @@ func TestVerifyAPIKey_error_paths(t *testing.T) {
 		name string
 		key  string
 	}{
-		{"nonexistent", "sfx_0000000000000000000000000000000000000000000000000000000000000000"},
+		{"nonexistent", "ak_0000000000000000000000000000000000000000000000000000000000000000"},
 		{"wrong key", plaintext + "x"},
 		{"empty", ""},
 	} {
@@ -122,5 +123,99 @@ func TestVerifyAPIKey_error_paths(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("VerifyAPIKey(valid) = nil")
+	}
+}
+
+func TestVerifyAPIKey_expired(t *testing.T) {
+	t.Parallel()
+	db := newFakeSessionStore()
+	ctx := context.Background()
+
+	user := &User{Username: "keyuser", PasswordHash: "dummy", Role: "admin", Enabled: true}
+	if err := db.CreateUser(ctx, user); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
+	if err != nil {
+		t.Fatalf("GenerateAPIKey: %v", err)
+	}
+
+	past := time.Now().Add(-time.Hour)
+	if err := db.CreateAPIKey(ctx, &Key{
+		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix,
+		Label: "expired", ExpiresAt: &past,
+	}); err != nil {
+		t.Fatalf("CreateAPIKey: %v", err)
+	}
+
+	_, err = VerifyAPIKey(ctx, db, plaintext)
+	if !errors.Is(err, ErrInvalidAPIKey) {
+		t.Fatalf("VerifyAPIKey(expired) = %v, want ErrInvalidAPIKey", err)
+	}
+}
+
+func TestVerifyAPIKey_not_expired(t *testing.T) {
+	t.Parallel()
+	db := newFakeSessionStore()
+	ctx := context.Background()
+
+	user := &User{Username: "keyuser", PasswordHash: "dummy", Role: "admin", Enabled: true}
+	if err := db.CreateUser(ctx, user); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
+	if err != nil {
+		t.Fatalf("GenerateAPIKey: %v", err)
+	}
+
+	future := time.Now().Add(time.Hour)
+	if err := db.CreateAPIKey(ctx, &Key{
+		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix,
+		Label: "valid", ExpiresAt: &future,
+	}); err != nil {
+		t.Fatalf("CreateAPIKey: %v", err)
+	}
+
+	got, err := VerifyAPIKey(ctx, db, plaintext)
+	if err != nil {
+		t.Fatalf("VerifyAPIKey(valid) error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("VerifyAPIKey(valid) = nil")
+	}
+}
+
+func TestGenerateAPIKey_custom_prefix(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		prefix string
+	}{
+		{"standard", "ak_"},
+		{"custom", "myapp_"},
+		{"empty", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			plaintext, hash, displayPrefix, displaySuffix, err := GenerateAPIKey(tt.prefix)
+			if err != nil {
+				t.Fatalf("GenerateAPIKey(%q) error: %v", tt.prefix, err)
+			}
+			if tt.prefix != "" && plaintext[:len(tt.prefix)] != tt.prefix {
+				t.Errorf("plaintext %q does not start with prefix %q", plaintext, tt.prefix)
+			}
+			if hash == "" {
+				t.Error("hash is empty")
+			}
+			if displayPrefix == "" {
+				t.Error("displayPrefix is empty")
+			}
+			if displaySuffix == "" {
+				t.Error("displaySuffix is empty")
+			}
+		})
 	}
 }

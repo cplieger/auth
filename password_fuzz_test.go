@@ -7,6 +7,7 @@ func FuzzVerifyPassword(f *testing.F) {
 	f.Add("")
 	f.Add("$bcrypt$invalid$format")
 	f.Add("not-a-hash-at-all")
+	f.Add("$argon2id$v=99$m=19456,t=2,p=1$AAAA$BBBB")
 	f.Fuzz(func(t *testing.T, encoded string) {
 		_, _ = parsePHC(encoded)
 	})

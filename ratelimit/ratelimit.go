@@ -40,6 +40,7 @@ func DefaultConfig() Config {
 type Checker interface {
 	Allow(ip, username string) (allowed bool, retryAfter time.Duration)
 	Record(ip, username string)
+	Reset(ip, username string)
 }
 
 // Compile-time assertion that *RateLimiter satisfies Checker.
@@ -146,6 +147,21 @@ func (rl *RateLimiter) Record(ip, username string) {
 // Stop stops the background prune goroutine.
 func (rl *RateLimiter) Stop() {
 	rl.cancel()
+}
+
+// Reset clears the sliding window entries for the given IP and username.
+// Call after a successful authentication to prevent permanent soft-lockout
+// (OWASP ASVS 2.2.1).
+func (rl *RateLimiter) Reset(ip, username string) {
+	rl.muIP.Lock()
+	delete(rl.ipWindows, ip)
+	rl.muIP.Unlock()
+
+	if username != "" {
+		rl.muAcct.Lock()
+		delete(rl.acctWindows, username)
+		rl.muAcct.Unlock()
+	}
 }
 
 // pruneLoop removes stale entries at the configured prune interval.

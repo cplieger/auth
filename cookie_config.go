@@ -1,0 +1,196 @@
+package auth
+
+import (
+	"errors"
+	"net/http"
+	"strings"
+)
+
+// CookiePosture determines the cookie security posture at deploy time.
+// This is a DEPLOY-TIME decision, NOT per-request.
+type CookiePosture int
+
+const (
+	// PostureSecure is the default: __Host- prefix + Secure + HttpOnly + SameSite=Lax.
+	// Works on any HTTPS deployment including self-signed certificates.
+	PostureSecure CookiePosture = iota
+
+	// PostureInsecureLAN is for HTTP-only LAN/Docker deployments (ip:port, dockername:port).
+	// Uses a non-prefixed name, no Secure flag. Explicitly opt-in only.
+	PostureInsecureLAN
+
+	// PostureForceSecure forces Secure flag even behind a TLS-terminating proxy
+	// where r.TLS is nil. Requires TrustForwardedHeaders=true to detect HTTPS.
+	PostureForceSecure
+)
+
+// CookieConfig holds configurable cookie attributes for session cookies.
+// The posture is a deploy-time decision — ONE stable cookie name per deployment.
+type CookieConfig struct {
+	// Name is the base cookie name (without __Host- prefix).
+	// Default: "auth_session".
+	Name string
+
+	// Path is the cookie Path attribute. Default: "/".
+	Path string
+
+	// Domain is the cookie Domain attribute. Default: "" (unset).
+	// Note: __Host- prefix requires Domain to be unset.
+	Domain string
+
+	// SameSite is the cookie SameSite attribute. Default: http.SameSiteLaxMode.
+	SameSite http.SameSite
+
+	// Posture selects the deploy-time cookie security posture.
+	// Default: PostureSecure.
+	Posture CookiePosture
+
+	// TrustForwardedHeaders enables honoring X-Forwarded-Proto to detect HTTPS.
+	// MUST only be enabled when the app is behind a reverse proxy that always
+	// sets/overwrites this header. When false (default), only r.TLS is used.
+	TrustForwardedHeaders bool
+}
+
+// Legacy constants for backward compatibility.
+const (
+	CookieNameSecure = "__Host-auth_session"
+	CookieNameHTTP   = "auth_session"
+)
+
+// CookieNoPrefix is kept for backward compatibility in tests.
+const CookieNoPrefix = "-"
+
+// DefaultCookieConfig returns a CookieConfig with secure defaults.
+func DefaultCookieConfig() CookieConfig {
+	return CookieConfig{
+		Posture:  PostureSecure,
+		Name:     CookieNameHTTP,
+		Path:     "/",
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
+// EffectiveName returns the ONE stable cookie name for this deployment.
+// Determined entirely by Posture at config time — no per-request logic.
+func (c *CookieConfig) EffectiveName() string {
+	base := c.Name
+	if base == "" {
+		base = CookieNameHTTP
+	}
+	switch c.Posture {
+	case PostureInsecureLAN:
+		return base
+	default: // PostureSecure, PostureForceSecure
+		return "__Host-" + base
+	}
+}
+
+// effectivePath returns the resolved path.
+func (c *CookieConfig) effectivePath() string {
+	if c.Path != "" {
+		return c.Path
+	}
+	return "/"
+}
+
+// effectiveSameSite returns the resolved SameSite mode.
+func (c *CookieConfig) effectiveSameSite() http.SameSite {
+	if c.SameSite != 0 {
+		return c.SameSite
+	}
+	return http.SameSiteLaxMode
+}
+
+// isSecureCookie returns whether the Secure flag should be set based on posture.
+func (c *CookieConfig) isSecureCookie() bool {
+	return c.Posture != PostureInsecureLAN
+}
+
+// protoHTTPS is the HTTPS protocol identifier used in forwarded-proto checks.
+const protoHTTPS = "https"
+
+// isHTTPS returns true if the request arrived over HTTPS, respecting
+// TrustForwardedHeaders configuration.
+func (c *CookieConfig) isHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if c.TrustForwardedHeaders {
+		return r.Header.Get("X-Forwarded-Proto") == protoHTTPS
+	}
+	return false
+}
+
+// CookieName returns the stable cookie name for this config. The request
+// parameter is accepted for backward compatibility but posture determines
+// the name, not the request scheme.
+func (c *CookieConfig) CookieName(_ *http.Request) string {
+	return c.EffectiveName()
+}
+
+// SetCookie sets the session cookie on the response using this config.
+func (c *CookieConfig) SetCookie(w http.ResponseWriter, r *http.Request, token string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is conditional for LAN HTTP support
+		Name:     c.EffectiveName(),
+		Value:    token,
+		Path:     c.effectivePath(),
+		Domain:   c.Domain,
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   c.isSecureCookie(),
+		SameSite: c.effectiveSameSite(),
+	})
+	// Cache-Control: no-store on any response with Set-Cookie (OWASP Session Mgmt CS)
+	w.Header().Set("Cache-Control", "no-store")
+	_ = r // keep param for interface compatibility
+}
+
+// ClearCookie clears the session cookie.
+func (c *CookieConfig) ClearCookie(w http.ResponseWriter, r *http.Request) {
+	c.SetCookie(w, r, "", -1)
+}
+
+// ReadCookie reads the session token from the cookie using the stable name.
+func (c *CookieConfig) ReadCookie(r *http.Request) string {
+	ck, err := r.Cookie(c.EffectiveName())
+	if err != nil {
+		return ""
+	}
+	return ck.Value
+}
+
+// Validate checks that the CookieConfig fields do not contain characters
+// that would cause http.SetCookie to silently produce a malformed header.
+func (c *CookieConfig) Validate() error {
+	name := c.EffectiveName()
+	if err := validateCookieField("Name", name); err != nil {
+		return err
+	}
+	if c.Domain != "" {
+		if err := validateCookieField("Domain", c.Domain); err != nil {
+			return err
+		}
+	}
+	if c.Path != "" {
+		if err := validateCookieField("Path", c.Path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateCookieField rejects strings containing control characters or
+// characters invalid in cookie attributes.
+func validateCookieField(field, value string) error {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return errors.New("auth: CookieConfig." + field + " contains control character")
+		}
+	}
+	if field == "Name" {
+		if strings.ContainsAny(value, " ;=,\"\\") {
+			return errors.New("auth: CookieConfig." + field + " contains invalid cookie-name character")
+		}
+	}
+	return nil
+}

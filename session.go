@@ -37,6 +37,9 @@ func GenerateSessionToken() (plaintext, hash string, err error) {
 // ValidateSession checks whether a session is still valid given the idle
 // and absolute timeout durations.
 func ValidateSession(sess *Session, idleTimeout, absTimeout time.Duration, now time.Time) error {
+	if sess == nil {
+		return ErrSessionNotFound
+	}
 	if now.Sub(sess.LastActivity) > idleTimeout {
 		return ErrSessionExpired
 	}

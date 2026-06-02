@@ -8,6 +8,8 @@ func FuzzValidateRedirectURI(f *testing.F) {
 	f.Add("//evil.com")
 	f.Add("https://evil.com")
 	f.Add("")
+	f.Add("/path?q=1#frag")
+	f.Add("javascript:alert(1)")
 
 	f.Fuzz(func(t *testing.T, uri string) {
 		result := ValidateRedirectURI(uri)

@@ -21,28 +21,40 @@ const PasswordMinLengthMultiFactor = 8
 // enabled and thus a sole sufficient factor.
 const PasswordMinLengthSolo = 15
 
+// PasswordMaxLength is the maximum password length to prevent DoS via
+// extremely long inputs to Argon2id (OWASP recommendation).
+const PasswordMaxLength = 128
+
 // hibpRequestTimeout is the HTTP request timeout for the Have I Been Pwned
 // k-anonymity API.
 const hibpRequestTimeout = 5 * time.Second
 
-// ValidatePasswordLength enforces minimum password length.
+// ValidatePasswordLength enforces minimum and maximum password length.
+// Maximum length (128 chars) prevents DoS via Argon2id processing of
+// extremely long inputs.
 func ValidatePasswordLength(password string, passwordOnly bool) error {
+	runeLen := len([]rune(password))
+	if runeLen > PasswordMaxLength {
+		return fmt.Errorf("password must be at most %d characters", PasswordMaxLength)
+	}
 	minLen := PasswordMinLengthMultiFactor
 	if passwordOnly {
 		minLen = PasswordMinLengthSolo
 	}
-	if len([]rune(password)) < minLen {
+	if runeLen < minLen {
 		return fmt.Errorf("password must be at least %d characters", minLen)
 	}
 	return nil
 }
 
 // ValidatePasswordContext rejects passwords that trivially embed the username
-// or the application name.
-func ValidatePasswordContext(password, username string) error {
+// or any of the provided forbidden words.
+func ValidatePasswordContext(password, username string, forbiddenWords []string) error {
 	lower := strings.ToLower(password)
-	if strings.Contains(lower, "subflux") {
-		return errors.New("password must not contain the application name")
+	for _, word := range forbiddenWords {
+		if word != "" && strings.Contains(lower, strings.ToLower(word)) {
+			return errors.New("password must not contain a forbidden word")
+		}
 	}
 	if len(username) >= 4 && strings.Contains(lower, strings.ToLower(username)) {
 		return errors.New("password must not contain your username")

@@ -11,8 +11,7 @@ import (
 	"pgregory.net/rapid"
 )
 
-// Feature: subflux-authentication, Property 19: Rate limiter sliding window
-// **Validates: Requirements 15.1, 15.5**
+// Property: Rate limiter sliding window
 func TestProperty_RateLimiterSlidingWindow(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(t *rapid.T) {
@@ -475,6 +474,59 @@ func TestRateLimiter_prune_concurrent(t *testing.T) {
 	})
 
 	wg.Wait()
+}
+
+func TestRateLimiter_Reset_clears_counters(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	rl := NewRateLimiter(context.Background(), DefaultConfig())
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	ip := "10.0.0.1"
+	username := "alice"
+
+	// Fill up to the limit
+	for range rl.ipLimit {
+		rl.Record(ip, username)
+	}
+
+	// Should be blocked
+	allowed, _ := rl.Allow(ip, username)
+	if allowed {
+		t.Fatal("Allow() = true before Reset, want false")
+	}
+
+	// Reset on successful login
+	rl.Reset(ip, username)
+
+	// Should be allowed again
+	allowed, _ = rl.Allow(ip, username)
+	if !allowed {
+		t.Fatal("Allow() = false after Reset, want true")
+	}
+}
+
+func TestRateLimiter_Reset_empty_username(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	rl := NewRateLimiter(context.Background(), DefaultConfig())
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	ip := "10.0.0.1"
+	for range rl.ipLimit {
+		rl.Record(ip, "")
+	}
+
+	rl.Reset(ip, "")
+
+	allowed, _ := rl.Allow(ip, "")
+	if !allowed {
+		t.Fatal("Allow() = false after Reset with empty username, want true")
+	}
 }
 
 func BenchmarkRateLimiter_parallel(b *testing.B) {

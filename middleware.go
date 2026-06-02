@@ -6,19 +6,39 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // ErrUnauthenticated is returned when no valid credential is found.
 var ErrUnauthenticated = errors.New("unauthenticated")
 
+// AuthStore is the composed interface needed by [Authenticator] — session lookup,
+// user lookup, and API key lookup.
+type AuthStore interface { //nolint:revive // stutters as auth.AuthStore but renaming would break consumers
+	SessionReader
+	SessionActivityUpdater
+	UserReader
+	APIKeyReader
+}
+
 // Authenticator resolves an HTTP request to an authenticated user.
+// Create with [NewAuthenticator].
 type Authenticator struct {
-	Store SessionStore
-	// Bypass reports whether all authentication is disabled (nil means never).
-	Bypass      func() bool
-	IdleTimeout time.Duration
-	AbsTimeout  time.Duration
+	store AuthStore
+	cfg   authConfig
+}
+
+// NewAuthenticator creates an Authenticator with the given store and options.
+// The store must implement SessionReader, UserReader, and APIKeyReader.
+// If no idle/absolute timeout is provided, defaults of 1h and 24h are applied.
+func NewAuthenticator(store AuthStore, opts ...Option) *Authenticator {
+	cfg := authConfig{}
+	for _, o := range opts {
+		if o != nil {
+			o(&cfg)
+		}
+	}
+	cfg.defaults()
+	return &Authenticator{store: store, cfg: cfg}
 }
 
 // syntheticAdminUser is the user injected when BypassAuth is true.
@@ -32,7 +52,7 @@ var syntheticAdminUser = &User{
 // Authenticate checks session cookie first, then API key header, then API key
 // query param. Returns the user and session hash, or [ErrUnauthenticated].
 func (a *Authenticator) Authenticate(r *http.Request) (*User, string, error) {
-	if a.Bypass != nil && a.Bypass() {
+	if a.cfg.bypass != nil && a.cfg.bypass() {
 		return syntheticAdminUser, "", nil
 	}
 
@@ -56,7 +76,7 @@ func (a *Authenticator) RequireAuth(w http.ResponseWriter, r *http.Request) (*Us
 	user, sessHash, err := a.Authenticate(r)
 	if err != nil {
 		if IsBrowserRequest(r) {
-			http.Redirect(w, r, "/login?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
+			http.Redirect(w, r, a.loginPath()+"?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
 		} else {
 			writeUnauthorized(w, r)
 		}
@@ -65,11 +85,19 @@ func (a *Authenticator) RequireAuth(w http.ResponseWriter, r *http.Request) (*Us
 	return user, sessHash, true
 }
 
+// loginPath returns the configured login path or "/login".
+func (a *Authenticator) loginPath() string {
+	if a.cfg.loginPath != "" {
+		return a.cfg.loginPath
+	}
+	return "/login"
+}
+
 // verifiers returns the ordered list of credential verifiers.
 func (a *Authenticator) verifiers() []CredentialVerifier {
 	return []CredentialVerifier{
-		&SessionVerifier{Store: a.Store, IdleTimeout: a.IdleTimeout, AbsTimeout: a.AbsTimeout},
-		&APIKeyVerifier{Store: a.Store},
+		NewSessionVerifier(a.store, WithLogger(a.cfg.logger), WithIdleTimeout(a.cfg.idleTimeout), WithAbsTimeout(a.cfg.absTimeout), WithCookie(a.cfg.cookie)),
+		NewAPIKeyVerifier(a.store),
 	}
 }
 

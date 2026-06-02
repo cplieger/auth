@@ -1,16 +1,22 @@
-package auth
+// Package oidc wraps coreos/go-oidc to provide OIDC/OAuth2 authentication
+// flows with PKCE. It imports the core auth package for types but never
+// the reverse.
+package oidc
 
 import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
+	gooidc "github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+
+	"github.com/cplieger/auth"
 )
 
 // Sentinel errors for OIDC operations.
@@ -22,8 +28,8 @@ var (
 	ErrOIDCConfigInvalid = errors.New("oidc: invalid configuration")
 )
 
-// OIDCClaims holds the verified claims extracted from an OIDC ID token.
-type OIDCClaims struct {
+// Claims holds the verified claims extracted from an OIDC ID token.
+type Claims struct {
 	Subject           string `json:"sub"`
 	Issuer            string `json:"iss"`
 	Email             string `json:"email"`
@@ -32,15 +38,24 @@ type OIDCClaims struct {
 	EmailVerified     bool   `json:"email_verified"`
 }
 
-// OIDCProvider wraps the coreos/go-oidc provider with PKCE support.
-type OIDCProvider struct {
-	provider *oidc.Provider
-	verifier *oidc.IDTokenVerifier
-	oauth2   oauth2.Config
-	config   OIDCConfig
+// Config holds OIDC provider settings.
+type Config struct {
+	IssuerURL    string `json:"issuer_url" yaml:"issuer_url"`
+	ClientID     string `json:"client_id" yaml:"client_id"`
+	ClientSecret string `json:"-" yaml:"client_secret"`
+	RedirectURI  string `json:"redirect_uri" yaml:"redirect_uri"`
+	AutoRedirect bool   `json:"auto_redirect" yaml:"auto_redirect"`
 }
 
-// GeneratePKCE generates a PKCE code verifier and its S256 challenge.
+// Provider wraps the coreos/go-oidc provider with PKCE support.
+type Provider struct {
+	provider *gooidc.Provider
+	verifier *gooidc.IDTokenVerifier
+	oauth2   oauth2.Config
+	config   Config
+}
+
+// GeneratePKCE generates a PKCE code verifier and S256 challenge.
 func GeneratePKCE() (verifier, challenge string, err error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -52,16 +67,20 @@ func GeneratePKCE() (verifier, challenge string, err error) {
 	return verifier, challenge, nil
 }
 
-// GenerateOIDCState generates a random state string for OIDC flows.
-func GenerateOIDCState() (string, error) {
-	return generateRandomHex(32)
+// GenerateState generates a random state string for OIDC flows.
+func GenerateState() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // oidcHTTPTimeout is the maximum time allowed for outbound OIDC HTTP calls.
 const oidcHTTPTimeout = 10 * time.Second
 
-// ValidateOIDCConfig checks that the required fields of an OIDCConfig are set.
-func ValidateOIDCConfig(cfg OIDCConfig) error {
+// ValidateConfig checks that the required fields of a Config are set.
+func ValidateConfig(cfg Config) error {
 	if cfg.IssuerURL == "" {
 		return fmt.Errorf("%w: issuer_url is required", ErrOIDCConfigInvalid)
 	}
@@ -74,21 +93,21 @@ func ValidateOIDCConfig(cfg OIDCConfig) error {
 	return nil
 }
 
-// NewOIDCProvider creates an OIDC provider from config.
-func NewOIDCProvider(ctx context.Context, cfg OIDCConfig) (*OIDCProvider, error) {
-	if err := ValidateOIDCConfig(cfg); err != nil {
+// NewProvider creates an OIDC provider from config.
+func NewProvider(ctx context.Context, cfg Config) (*Provider, error) {
+	if err := ValidateConfig(cfg); err != nil {
 		return nil, err
 	}
 
 	discoverCtx, cancel := context.WithTimeout(ctx, oidcHTTPTimeout)
 	defer cancel()
 
-	provider, err := oidc.NewProvider(discoverCtx, cfg.IssuerURL)
+	provider, err := gooidc.NewProvider(discoverCtx, cfg.IssuerURL)
 	if err != nil {
 		return nil, errors.Join(ErrOIDCDiscovery, err)
 	}
 
-	verifier := provider.Verifier(&oidc.Config{
+	verifier := provider.Verifier(&gooidc.Config{
 		ClientID: cfg.ClientID,
 	})
 
@@ -97,10 +116,10 @@ func NewOIDCProvider(ctx context.Context, cfg OIDCConfig) (*OIDCProvider, error)
 		ClientSecret: cfg.ClientSecret,
 		RedirectURL:  cfg.RedirectURI,
 		Endpoint:     provider.Endpoint(),
-		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		Scopes:       []string{gooidc.ScopeOpenID, "profile", "email"},
 	}
 
-	return &OIDCProvider{
+	return &Provider{
 		provider: provider,
 		verifier: verifier,
 		config:   cfg,
@@ -109,7 +128,7 @@ func NewOIDCProvider(ctx context.Context, cfg OIDCConfig) (*OIDCProvider, error)
 }
 
 // AuthorizationURL generates the OIDC authorization URL with PKCE and state.
-func (p *OIDCProvider) AuthorizationURL(state, nonce, codeChallenge string) string {
+func (p *Provider) AuthorizationURL(state, nonce, codeChallenge string) string {
 	return p.oauth2.AuthCodeURL(state,
 		oauth2.SetAuthURLParam("nonce", nonce),
 		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
@@ -118,7 +137,7 @@ func (p *OIDCProvider) AuthorizationURL(state, nonce, codeChallenge string) stri
 }
 
 // Exchange exchanges an authorization code for tokens and validates the ID token.
-func (p *OIDCProvider) Exchange(ctx context.Context, code, codeVerifier, nonce string) (*OIDCClaims, *time.Time, error) {
+func (p *Provider) Exchange(ctx context.Context, code, codeVerifier, nonce string) (*Claims, *time.Time, error) {
 	ctx, cancel := context.WithTimeout(ctx, oidcHTTPTimeout)
 	defer cancel()
 
@@ -143,7 +162,20 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code, codeVerifier, nonce s
 		return nil, nil, ErrOIDCNonceMismatch
 	}
 
-	var claims OIDCClaims
+	// OIDC Core §3.1.3.7 step 3: if multiple audiences, verify azp equals ClientID.
+	if len(idToken.Audience) > 1 {
+		var rawClaims struct {
+			AZP string `json:"azp"`
+		}
+		if err := idToken.Claims(&rawClaims); err != nil {
+			return nil, nil, errors.Join(ErrOIDCTokenInvalid, err)
+		}
+		if rawClaims.AZP != p.config.ClientID {
+			return nil, nil, fmt.Errorf("%w: azp claim %q does not match client_id", ErrOIDCTokenInvalid, rawClaims.AZP)
+		}
+	}
+
+	var claims Claims
 	if err := idToken.Claims(&claims); err != nil {
 		return nil, nil, errors.Join(ErrOIDCTokenInvalid, err)
 	}
@@ -156,8 +188,8 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code, codeVerifier, nonce s
 	return &claims, expiry, nil
 }
 
-// ResolveOIDCUser maps an OIDC identity to a user by (issuer, sub) only.
-func ResolveOIDCUser(claims *OIDCClaims, existingBySub *User) (user *User, isNew bool) {
+// ResolveUser maps an OIDC identity to a user by (issuer, sub) only.
+func ResolveUser(claims *Claims, existingBySub *auth.User) (user *auth.User, isNew bool) {
 	if existingBySub != nil {
 		return existingBySub, false
 	}
@@ -167,11 +199,11 @@ func ResolveOIDCUser(claims *OIDCClaims, existingBySub *User) (user *User, isNew
 		username = claims.Email
 	}
 
-	return &User{
+	return &auth.User{
 		Username:    username,
 		Email:       claims.Email,
 		DisplayName: claims.Name,
-		Role:        RoleUser,
+		Role:        auth.RoleUser,
 		OIDCSub:     claims.Subject,
 		OIDCIssuer:  claims.Issuer,
 		Enabled:     true,
