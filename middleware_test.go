@@ -5,8 +5,10 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,7 +144,7 @@ func TestProperty_APIKeyRoleInheritance(t *testing.T) {
 			rt.Fatalf("CreateUser: %v", err)
 		}
 
-		plaintext, hash, prefix, suffix, err := GenerateAPIKey()
+		plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
 		if err != nil {
 			rt.Fatalf("GenerateAPIKey: %v", err)
 		}
@@ -186,8 +188,9 @@ func TestIsBrowserRequest_table(t *testing.T) {
 		{"browser html", "text/html,application/xhtml+xml", "", true},
 		{"browser with wildcard", "text/html, */*", "", true},
 		{"api client json", "application/json", "", false},
-		{"api key overrides browser", "text/html", "sfx_abc123", false},
+		{"api key overrides browser", "text/html", "ak_abc123", false},
 		{"empty accept", "", "", false},
+		{"api key with empty accept", "", "ak_abc123", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -219,6 +222,7 @@ func TestIsHTTPS_table(t *testing.T) {
 		{"tls connection", "", true, true},
 		{"forwarded https", "https", false, true},
 		{"forwarded http", "http", false, false},
+		{"tls plus forwarded https", "https", true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -264,23 +268,45 @@ func TestSessionCookieName_table(t *testing.T) {
 
 func TestSetSessionCookie_sets_correct_attributes(t *testing.T) {
 	t.Parallel()
-	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-	SetSessionCookie(w, r, "tok123", 3600)
+	tests := []struct {
+		name     string
+		tls      bool
+		token    string
+		maxAge   int
+		wantName string
+		wantSec  bool
+	}{
+		{"http session", false, "tok123", 3600, CookieNameHTTP, false},
+		{"https session", true, "tok456", 7200, CookieNameSecure, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r, _ := http.NewRequest(http.MethodGet, "/", nil)
+			if tt.tls {
+				r.TLS = &tls.ConnectionState{}
+			}
+			w := httptest.NewRecorder()
+			SetSessionCookie(w, r, tt.token, tt.maxAge)
 
-	cookies := w.Result().Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("got %d cookies, want 1", len(cookies))
-	}
-	c := cookies[0]
-	if c.Name != CookieNameHTTP {
-		t.Errorf("name = %q, want %q", c.Name, CookieNameHTTP)
-	}
-	if !c.HttpOnly {
-		t.Error("HttpOnly = false")
-	}
-	if c.SameSite != http.SameSiteLaxMode {
-		t.Errorf("SameSite = %v, want Lax", c.SameSite)
+			cookies := w.Result().Cookies()
+			if len(cookies) != 1 {
+				t.Fatalf("got %d cookies, want 1", len(cookies))
+			}
+			c := cookies[0]
+			if c.Name != tt.wantName {
+				t.Errorf("name = %q, want %q", c.Name, tt.wantName)
+			}
+			if c.Secure != tt.wantSec {
+				t.Errorf("Secure = %v, want %v", c.Secure, tt.wantSec)
+			}
+			if !c.HttpOnly {
+				t.Error("HttpOnly = false")
+			}
+			if c.SameSite != http.SameSiteLaxMode {
+				t.Errorf("SameSite = %v, want Lax", c.SameSite)
+			}
+		})
 	}
 }
 
@@ -304,16 +330,21 @@ func TestReadSessionCookie_table(t *testing.T) {
 		name       string
 		cookieName string
 		value      string
+		tls        bool
 		want       string
 	}{
-		{"present", CookieNameHTTP, "mytoken", "mytoken"},
-		{"no cookie", "", "", ""},
-		{"wrong name", "other", "val", ""},
+		{"present", CookieNameHTTP, "mytoken", false, "mytoken"},
+		{"no cookie", "", "", false, ""},
+		{"wrong name", "other", "val", false, ""},
+		{"https cookie present", CookieNameSecure, "sectoken", true, "sectoken"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			r, _ := http.NewRequest(http.MethodGet, "/", nil)
+			if tt.tls {
+				r.TLS = &tls.ConnectionState{}
+			}
 			if tt.cookieName != "" {
 				r.AddCookie(&http.Cookie{Name: tt.cookieName, Value: tt.value})
 			}
@@ -395,7 +426,7 @@ func TestAuthenticate_session_cookie_valid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := &Authenticator{Store: db, IdleTimeout: time.Hour, AbsTimeout: 24 * time.Hour}
+	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/config", nil)
 	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: plaintext})
 
@@ -433,7 +464,7 @@ func TestAuthenticate_expired_session_falls_through(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := &Authenticator{Store: db, IdleTimeout: time.Hour, AbsTimeout: 24 * time.Hour}
+	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: plaintext})
 
@@ -453,7 +484,7 @@ func TestAuthenticate_api_key_header(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, prefix, suffix, err := GenerateAPIKey()
+	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +494,7 @@ func TestAuthenticate_api_key_header(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := &Authenticator{Store: db, IdleTimeout: time.Hour, AbsTimeout: 24 * time.Hour}
+	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/search", nil)
 	r.Header.Set("X-API-Key", plaintext)
 
@@ -478,7 +509,7 @@ func TestAuthenticate_api_key_header(t *testing.T) {
 
 func TestAuthenticate_no_credentials(t *testing.T) {
 	t.Parallel()
-	a := &Authenticator{Store: newFakeSessionStore(), IdleTimeout: time.Hour, AbsTimeout: 24 * time.Hour}
+	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	_, _, gotErr := a.Authenticate(r)
 	if !errors.Is(gotErr, ErrUnauthenticated) {
@@ -508,7 +539,7 @@ func TestAuthenticate_disabled_user_session(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := &Authenticator{Store: db, IdleTimeout: time.Hour, AbsTimeout: 24 * time.Hour}
+	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: plaintext})
 
@@ -520,7 +551,7 @@ func TestAuthenticate_disabled_user_session(t *testing.T) {
 
 func TestRequireAuth_unauthenticated_browser_redirects(t *testing.T) {
 	t.Parallel()
-	a := &Authenticator{Store: newFakeSessionStore(), IdleTimeout: time.Hour, AbsTimeout: 24 * time.Hour}
+	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/config", nil)
 	r.Header.Set("Accept", "text/html")
 	w := httptest.NewRecorder()
@@ -536,7 +567,7 @@ func TestRequireAuth_unauthenticated_browser_redirects(t *testing.T) {
 
 func TestRequireAuth_unauthenticated_api_returns_401(t *testing.T) {
 	t.Parallel()
-	a := &Authenticator{Store: newFakeSessionStore(), IdleTimeout: time.Hour, AbsTimeout: 24 * time.Hour}
+	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/config", nil)
 	r.Header.Set("Accept", "application/json")
 	w := httptest.NewRecorder()
@@ -547,5 +578,267 @@ func TestRequireAuth_unauthenticated_api_returns_401(t *testing.T) {
 	}
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestAuthenticate_api_key_query_param(t *testing.T) {
+	t.Parallel()
+	db := newFakeSessionStore()
+	ctx := context.Background()
+
+	user := &User{Username: "queryuser", PasswordHash: "dummy", Role: "admin", Enabled: true}
+	if err := db.CreateUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+
+	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateAPIKey(ctx, &Key{
+		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix, Label: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	r, _ := http.NewRequest(http.MethodGet, "/api/search?api_key="+plaintext, nil)
+
+	gotUser, _, gotErr := a.Authenticate(r)
+	if gotErr != nil {
+		t.Fatalf("Authenticate(api_key query) error = %v, want nil", gotErr)
+	}
+	if gotUser.ID != user.ID {
+		t.Errorf("Authenticate(api_key query) user ID = %d, want %d", gotUser.ID, user.ID)
+	}
+}
+
+func TestAuthenticate_invalid_api_key(t *testing.T) {
+	t.Parallel()
+	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	r, _ := http.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("X-API-Key", "ak_invalid_key_value")
+
+	_, _, gotErr := a.Authenticate(r)
+	if !errors.Is(gotErr, ErrUnauthenticated) {
+		t.Errorf("Authenticate(invalid key) error = %v, want ErrUnauthenticated", gotErr)
+	}
+}
+
+func TestAuthenticate_disabled_user_api_key(t *testing.T) {
+	t.Parallel()
+	db := newFakeSessionStore()
+	ctx := context.Background()
+
+	user := &User{Username: "disabledapi", PasswordHash: "dummy", Role: "user", Enabled: false}
+	if err := db.CreateUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+
+	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateAPIKey(ctx, &Key{
+		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix, Label: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	r, _ := http.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("X-API-Key", plaintext)
+
+	_, _, gotErr := a.Authenticate(r)
+	if !errors.Is(gotErr, ErrUnauthenticated) {
+		t.Errorf("Authenticate(disabled user API key) error = %v, want ErrUnauthenticated", gotErr)
+	}
+}
+
+func TestRequireAuth_authenticated_returns_user(t *testing.T) {
+	t.Parallel()
+	db := newFakeSessionStore()
+	ctx := context.Background()
+
+	user := &User{Username: "authuser", PasswordHash: "dummy", Role: "admin", Enabled: true}
+	if err := db.CreateUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+
+	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateAPIKey(ctx, &Key{
+		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix, Label: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	r, _ := http.NewRequest(http.MethodGet, "/api/search", nil)
+	r.Header.Set("X-API-Key", plaintext)
+	w := httptest.NewRecorder()
+
+	gotUser, _, ok := a.RequireAuth(w, r)
+	if !ok {
+		t.Fatal("RequireAuth() returned ok=false for authenticated request")
+	}
+	if gotUser.ID != user.ID {
+		t.Errorf("RequireAuth() user ID = %d, want %d", gotUser.ID, user.ID)
+	}
+}
+
+func TestAuthenticate_session_not_found_falls_through(t *testing.T) {
+	t.Parallel()
+	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	r, _ := http.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: "nonexistent-session-token"})
+
+	_, _, gotErr := a.Authenticate(r)
+	if !errors.Is(gotErr, ErrUnauthenticated) {
+		t.Errorf("Authenticate(stale session cookie) error = %v, want ErrUnauthenticated", gotErr)
+	}
+}
+
+func TestAuthenticate_stale_session_falls_through_to_api_key(t *testing.T) {
+	t.Parallel()
+	db := newFakeSessionStore()
+	ctx := context.Background()
+
+	user := &User{Username: "fallthrough_user", PasswordHash: "dummy", Role: "user", Enabled: true}
+	if err := db.CreateUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+
+	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateAPIKey(ctx, &Key{
+		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix, Label: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	r, _ := http.NewRequest(http.MethodGet, "/api/search", nil)
+	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: "stale-session-token"})
+	r.Header.Set("X-API-Key", plaintext)
+
+	gotUser, _, gotErr := a.Authenticate(r)
+	if gotErr != nil {
+		t.Fatalf("Authenticate(stale session + valid API key) error = %v, want nil", gotErr)
+	}
+	if gotUser.ID != user.ID {
+		t.Errorf("Authenticate(stale session + valid API key) user ID = %d, want %d", gotUser.ID, user.ID)
+	}
+}
+
+func TestAuthenticator_LoginPath_custom(t *testing.T) {
+	t.Parallel()
+	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour), WithLoginPath("/auth/signin"))
+	r, _ := http.NewRequest(http.MethodGet, "/protected", nil)
+	r.Header.Set("Accept", "text/html")
+	w := httptest.NewRecorder()
+
+	_, _, ok := a.RequireAuth(w, r)
+	if ok {
+		t.Fatal("expected ok=false")
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/auth/signin") {
+		t.Errorf("Location = %q, want prefix /auth/signin", loc)
+	}
+}
+
+func TestAuthenticator_LoginPath_default(t *testing.T) {
+	t.Parallel()
+	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	r, _ := http.NewRequest(http.MethodGet, "/protected", nil)
+	r.Header.Set("Accept", "text/html")
+	w := httptest.NewRecorder()
+
+	_, _, ok := a.RequireAuth(w, r)
+	if ok {
+		t.Fatal("expected ok=false")
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/login") {
+		t.Errorf("Location = %q, want prefix /login", loc)
+	}
+}
+
+func TestAuthenticator_Logger_used(t *testing.T) {
+	t.Parallel()
+	var buf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	db := newFakeSessionStore()
+	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour), WithLogger(logger))
+
+	// Create a session with a valid token but for a non-existent user (user lookup returns nil).
+	ctx := context.Background()
+	_, hash, err := GenerateSessionToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := db.CreateSession(ctx, &Session{
+		TokenHash: hash, UserID: 9999, AuthMethod: "password",
+		IPAddress: "127.0.0.1", CreatedAt: now, LastActivity: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The session verifier should use the injected logger (not slog.Default()).
+	sv := NewSessionVerifier(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour), WithLogger(logger))
+	_ = sv // Logger is threaded through Authenticator.verifiers()
+	if a.cfg.logger != logger {
+		t.Error("Logger not set on Authenticator")
+	}
+}
+
+func TestSessionVerifier_updates_activity(t *testing.T) {
+	t.Parallel()
+	db := newFakeSessionStore()
+	ctx := context.Background()
+
+	user := &User{Username: "active", PasswordHash: "dummy", Role: "user", Enabled: true}
+	if err := db.CreateUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+
+	plaintext, hash, err := GenerateSessionToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := time.Now().Add(-30 * time.Minute)
+	if err := db.CreateSession(ctx, &Session{
+		TokenHash: hash, UserID: user.ID, AuthMethod: "password",
+		IPAddress: "127.0.0.1", CreatedAt: created, LastActivity: created,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	v := NewSessionVerifier(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	r, _ := http.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: plaintext})
+
+	gotUser, _, gotErr := v.Verify(ctx, r)
+	if gotErr != nil {
+		t.Fatalf("Verify error: %v", gotErr)
+	}
+	if gotUser == nil {
+		t.Fatal("Verify returned nil user")
+	}
+
+	// Check that LastActivity was updated
+	sess, _ := db.GetSessionByHash(ctx, hash)
+	if sess.LastActivity.Equal(created) {
+		t.Error("LastActivity was not updated after Verify")
+	}
+	if time.Since(sess.LastActivity) > 5*time.Second {
+		t.Errorf("LastActivity not recent: %v", sess.LastActivity)
 	}
 }

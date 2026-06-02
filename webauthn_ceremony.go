@@ -33,9 +33,15 @@ func NewWebAuthn(rpID, rpDisplayName string, rpOrigins []string) (*webauthn.WebA
 }
 
 // BeginRegistration starts a WebAuthn registration ceremony.
+// It requires resident key (discoverable credential), enforces user verification,
+// and excludes already-registered credentials to prevent duplicate registrations.
 func BeginRegistration(wa *webauthn.WebAuthn, user *WebAuthnUser) (*protocol.CredentialCreation, *webauthn.SessionData, error) {
 	return wa.BeginRegistration(user,
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
+		webauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
+			ResidentKey:      protocol.ResidentKeyRequirementRequired,
+			UserVerification: protocol.VerificationRequired,
+		}),
 		webauthn.WithExclusions(webauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()),
 		webauthn.WithExtensions(map[string]any{"credProps": true}),
 	)
@@ -48,15 +54,22 @@ func FinishRegistration(wa *webauthn.WebAuthn, user *WebAuthnUser, sessionData *
 
 // BeginLogin starts a WebAuthn assertion ceremony (discoverable login).
 func BeginLogin(wa *webauthn.WebAuthn) (*protocol.CredentialAssertion, *webauthn.SessionData, error) {
-	return wa.BeginDiscoverableLogin()
+	return wa.BeginDiscoverableLogin(
+		webauthn.WithUserVerification(protocol.VerificationRequired),
+	)
 }
 
-// BeginConditionalLogin starts a WebAuthn assertion ceremony with conditional mediation.
+// BeginConditionalLogin starts a WebAuthn assertion ceremony with conditional
+// mediation, enabling browser autofill UI for passkeys.
 func BeginConditionalLogin(wa *webauthn.WebAuthn) (*protocol.CredentialAssertion, *webauthn.SessionData, error) {
-	return wa.BeginDiscoverableMediatedLogin(protocol.MediationConditional)
+	return wa.BeginDiscoverableMediatedLogin(protocol.MediationConditional,
+		webauthn.WithUserVerification(protocol.VerificationRequired),
+	)
 }
 
 // FinishLogin completes a WebAuthn assertion ceremony (discoverable login).
+// The userFinder callback resolves the credential's rawID and userHandle to
+// a webauthn.User for signature verification.
 func FinishLogin(wa *webauthn.WebAuthn, sessionData *webauthn.SessionData, response *http.Request, userFinder func(rawID, userHandle []byte) (webauthn.User, error)) (webauthn.User, *webauthn.Credential, error) {
 	return wa.FinishPasskeyLogin(userFinder, *sessionData, response)
 }

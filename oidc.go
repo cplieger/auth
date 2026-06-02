@@ -40,7 +40,8 @@ type OIDCProvider struct {
 	config   OIDCConfig
 }
 
-// GeneratePKCE generates a PKCE code verifier and its S256 challenge.
+// GeneratePKCE generates a PKCE code verifier (32 random bytes, base64url-encoded)
+// and its S256 challenge (SHA-256 of verifier, base64url-encoded).
 func GeneratePKCE() (verifier, challenge string, err error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -143,6 +144,19 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code, codeVerifier, nonce s
 		return nil, nil, ErrOIDCNonceMismatch
 	}
 
+	// OIDC Core §3.1.3.7 step 3: if multiple audiences, verify azp equals ClientID.
+	if len(idToken.Audience) > 1 {
+		var rawClaims struct {
+			AZP string `json:"azp"`
+		}
+		if err := idToken.Claims(&rawClaims); err != nil {
+			return nil, nil, errors.Join(ErrOIDCTokenInvalid, err)
+		}
+		if rawClaims.AZP != p.config.ClientID {
+			return nil, nil, fmt.Errorf("%w: azp claim %q does not match client_id", ErrOIDCTokenInvalid, rawClaims.AZP)
+		}
+	}
+
 	var claims OIDCClaims
 	if err := idToken.Claims(&claims); err != nil {
 		return nil, nil, errors.Join(ErrOIDCTokenInvalid, err)
@@ -157,6 +171,9 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code, codeVerifier, nonce s
 }
 
 // ResolveOIDCUser maps an OIDC identity to a user by (issuer, sub) only.
+// This avoids email-based account linking which is vulnerable to account
+// takeover if the IdP does not guarantee email ownership (see CVE-2026-41574,
+// CVE-2026-44166). New users are created with Role=RoleUser and Enabled=true.
 func ResolveOIDCUser(claims *OIDCClaims, existingBySub *User) (user *User, isNew bool) {
 	if existingBySub != nil {
 		return existingBySub, false

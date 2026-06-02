@@ -95,3 +95,7 @@ func TestFakeSessionStore_roundtrip(t *testing.T) {
 		t.Fatalf("got %+v", gotKey)
 	}
 }
+
+// SessionStoreContractTest is an alias for SessionStoreContractSuite for
+// backward compatibility with consumers that reference the shorter name.
+var SessionStoreContractTest = SessionStoreContractSuite

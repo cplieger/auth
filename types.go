@@ -65,6 +65,7 @@ type PasskeyCredential struct {
 	BackupState     bool      `json:"-"`
 	UserPresent     bool      `json:"-"`
 	UserVerified    bool      `json:"-"`
+	CloneWarning    bool      `json:"-"`
 }
 
 // PasskeyFlags holds the boolean authenticator flags for a credential update.
@@ -73,17 +74,19 @@ type PasskeyFlags struct {
 	UserVerified   bool
 	BackupEligible bool
 	BackupState    bool
+	CloneWarning   bool
 }
 
 // Key represents a machine-to-machine API key for a user.
 type Key struct {
-	CreatedAt time.Time `json:"created_at"`
-	KeyHash   string    `json:"-"`
-	KeyPrefix string    `json:"key_prefix"`
-	KeySuffix string    `json:"key_suffix"`
-	Label     string    `json:"label"`
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"user_id"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	KeyHash   string     `json:"-"`
+	KeyPrefix string     `json:"key_prefix"`
+	KeySuffix string     `json:"key_suffix"`
+	Label     string     `json:"label"`
+	ID        int64      `json:"id"`
+	UserID    int64      `json:"user_id"`
 }
 
 // OIDCConfig holds OIDC provider settings.
@@ -97,6 +100,6 @@ type OIDCConfig struct {
 
 // HTTP header and query parameter constants for API key authentication.
 const (
-	HeaderXAPIKey   = "X-Api-Key" //nolint:gosec // G101 false positive: header name, not a credential
+	HeaderXAPIKey    = "X-Api-Key" //nolint:gosec // G101 false positive: header name, not a credential
 	QueryParamAPIKey = "api_key"
 )

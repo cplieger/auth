@@ -76,6 +76,12 @@ func TestProperty_PasswordLengthValidation(t *testing.T) {
 		if err := ValidatePasswordLength(validSolo, true); err != nil {
 			t.Fatalf("ValidatePasswordLength(%q, true) = %v", validSolo, err)
 		}
+
+		// Max length enforcement
+		tooLong := rapid.StringN(129, 256, -1).Draw(t, "tooLong")
+		if err := ValidatePasswordLength(tooLong, false); err == nil {
+			t.Fatalf("ValidatePasswordLength(len=%d, false) = nil, want error", len([]rune(tooLong)))
+		}
 	})
 }
 
@@ -102,6 +108,37 @@ func TestVerifyPassword_rejects_malformed_hashes(t *testing.T) {
 			}
 			if ok {
 				t.Fatalf("VerifyPassword(_, %q) = (true, _), want false", tc.hash)
+			}
+		})
+	}
+}
+
+func TestNeedsRehash(t *testing.T) {
+	t.Parallel()
+
+	// Current params → false
+	hash, err := HashPassword("test-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if NeedsRehash(hash) {
+		t.Error("current params should not need rehash")
+	}
+
+	for _, tc := range []struct {
+		name string
+		hash string
+		want bool
+	}{
+		{"different memory", "$argon2id$v=19$m=65536,t=2,p=1$c2FsdHNhbHRzYWx0c2Fs$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaA", true},
+		{"different iterations", "$argon2id$v=19$m=19456,t=3,p=1$c2FsdHNhbHRzYWx0c2Fs$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaA", true},
+		{"different key length", "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHRzYWx0c2Fs$c2hvcnQ", true},
+		{"invalid hash", "not-a-valid-hash", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := NeedsRehash(tc.hash); got != tc.want {
+				t.Errorf("NeedsRehash(%q) = %v, want %v", tc.hash, got, tc.want)
 			}
 		})
 	}

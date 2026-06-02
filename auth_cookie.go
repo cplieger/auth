@@ -5,14 +5,17 @@ import (
 	"strings"
 )
 
-// Session cookie names.
+// Session cookie names (legacy constants for backward compatibility).
 const (
-	CookieNameSecure = "__Host-sfx_session"
-	CookieNameHTTP   = "sfx_session"
+	CookieNameSecure = "__Host-auth_session"
+	CookieNameHTTP   = "auth_session"
 )
 
 // protoHTTPS is the HTTPS protocol identifier used in forwarded-proto checks.
 const protoHTTPS = "https"
+
+// defaultCookieConfig is the package-level default used by the free functions.
+var defaultCookieConfig = DefaultCookieConfig()
 
 // IsBrowserRequest returns true if the request appears to be from a browser
 // (Accept header contains text/html and no X-API-Key header).
@@ -29,42 +32,22 @@ func isHTTPS(r *http.Request) bool {
 }
 
 // SessionCookieName returns the appropriate cookie name based on whether
-// the request arrived over HTTPS.
+// the request arrived over HTTPS. Uses the default CookieConfig.
 func SessionCookieName(r *http.Request) string {
-	if isHTTPS(r) {
-		return CookieNameSecure
-	}
-	return CookieNameHTTP
+	return defaultCookieConfig.CookieName(r)
 }
 
-// SetSessionCookie sets the session cookie on the response.
+// SetSessionCookie sets the session cookie on the response using the default CookieConfig.
 func SetSessionCookie(w http.ResponseWriter, r *http.Request, token string, maxAge int) {
-	secure := isHTTPS(r)
-	name := CookieNameHTTP
-	if secure {
-		name = CookieNameSecure
-	}
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is conditional for LAN HTTP support
-		Name:     name,
-		Value:    token,
-		Path:     "/",
-		MaxAge:   maxAge,
-		HttpOnly: true,
-		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
-	})
+	defaultCookieConfig.SetCookie(w, r, token, maxAge)
 }
 
-// ClearSessionCookie clears the session cookie.
+// ClearSessionCookie clears the session cookie using the default CookieConfig.
 func ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
-	SetSessionCookie(w, r, "", -1)
+	defaultCookieConfig.ClearCookie(w, r)
 }
 
-// ReadSessionCookie reads the session token from the cookie.
+// ReadSessionCookie reads the session token from the cookie using the default CookieConfig.
 func ReadSessionCookie(r *http.Request) string {
-	c, err := r.Cookie(SessionCookieName(r))
-	if err != nil {
-		return ""
-	}
-	return c.Value
+	return defaultCookieConfig.ReadCookie(r)
 }

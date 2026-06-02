@@ -24,7 +24,7 @@ func BenchmarkAuthenticate(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	apiKeyRaw := "sfx_benchmarkapikey1234567890abcdef"
+	apiKeyRaw := "ak_benchmarkapikey1234567890abcdef"
 	apiKeyHash := APIKeyHash(apiKeyRaw)
 	if err := store.CreateAPIKey(ctx, &Key{
 		UserID: user.ID, KeyHash: apiKeyHash, Label: "bench-key",
@@ -32,7 +32,7 @@ func BenchmarkAuthenticate(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	auth := &Authenticator{Store: store, IdleTimeout: 24 * time.Hour, AbsTimeout: 7 * 24 * time.Hour}
+	auth := NewAuthenticator(store, WithIdleTimeout(24*time.Hour), WithAbsTimeout(7*24*time.Hour))
 
 	b.Run("session_cookie", func(b *testing.B) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/test", nil)

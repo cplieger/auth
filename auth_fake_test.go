@@ -56,6 +56,15 @@ func (f *fakeSessionStore) GetAPIKeyByHash(_ context.Context, hash string) (*Key
 	return k, nil
 }
 
+func (f *fakeSessionStore) UpdateSessionActivity(_ context.Context, tokenHash string, now time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if s, ok := f.sessions[tokenHash]; ok {
+		s.LastActivity = now
+	}
+	return nil
+}
+
 func (f *fakeSessionStore) CreateUser(_ context.Context, u *User) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -46,6 +46,21 @@ func TestProperty_OIDCIdentityResolution(t *testing.T) {
 		if user.Username != claims.PreferredUsername {
 			t.Fatalf("username = %q, want %q", user.Username, claims.PreferredUsername)
 		}
+		if user.Email != claims.Email {
+			t.Fatalf("email = %q, want %q", user.Email, claims.Email)
+		}
+		if user.DisplayName != claims.Name {
+			t.Fatalf("display_name = %q, want %q", user.DisplayName, claims.Name)
+		}
+		if user.OIDCSub != claims.Subject {
+			t.Fatalf("oidc_sub = %q, want %q", user.OIDCSub, claims.Subject)
+		}
+		if user.OIDCIssuer != claims.Issuer {
+			t.Fatalf("oidc_issuer = %q, want %q", user.OIDCIssuer, claims.Issuer)
+		}
+		if !user.Enabled {
+			t.Fatal("expected Enabled=true for new user")
+		}
 	})
 }
 
@@ -138,4 +153,28 @@ func TestNewOIDCProvider_validation_errors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProperty_PKCEUniqueness(t *testing.T) {
+	t.Parallel()
+	rapid.Check(t, func(t *rapid.T) {
+		n := rapid.IntRange(2, 20).Draw(t, "n")
+		verifiers := make(map[string]struct{}, n)
+		challenges := make(map[string]struct{}, n)
+
+		for i := range n {
+			verifier, challenge, err := GeneratePKCE()
+			if err != nil {
+				t.Fatalf("GeneratePKCE[%d] error: %v", i, err)
+			}
+			if _, dup := verifiers[verifier]; dup {
+				t.Fatalf("duplicate verifier at index %d", i)
+			}
+			verifiers[verifier] = struct{}{}
+			if _, dup := challenges[challenge]; dup {
+				t.Fatalf("duplicate challenge at index %d", i)
+			}
+			challenges[challenge] = struct{}{}
+		}
+	})
 }

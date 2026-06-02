@@ -147,8 +147,9 @@ func APICredentialToWebAuthn(c *PasskeyCredential) webauthn.Credential {
 			BackupState:    c.BackupState,
 		},
 		Authenticator: webauthn.Authenticator{
-			AAGUID:    c.AAGUID,
-			SignCount: c.SignCount,
+			AAGUID:       c.AAGUID,
+			SignCount:    c.SignCount,
+			CloneWarning: c.CloneWarning,
 		},
 	}
 
@@ -195,6 +196,7 @@ func WebAuthnCredentialToAPI(c *webauthn.Credential, userID int64, name string) 
 		BackupState:     c.Flags.BackupState,
 		UserPresent:     c.Flags.UserPresent,
 		UserVerified:    c.Flags.UserVerified,
+		CloneWarning:    c.Authenticator.CloneWarning,
 		RawAttestation:  rawAttestation,
 	}
 }
