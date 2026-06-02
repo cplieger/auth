@@ -1,6 +1,6 @@
 module github.com/cplieger/auth
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/coreos/go-oidc/v3 v3.18.0
