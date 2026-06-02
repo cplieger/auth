@@ -95,6 +95,13 @@ func (f *fakeSessionStore) CreateAPIKey(_ context.Context, k *Key) error {
 	return nil
 }
 
+func (f *fakeSessionStore) DeleteSession(_ context.Context, tokenHash string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.sessions, tokenHash)
+	return nil
+}
+
 func (f *fakeSessionStore) DeleteUserSessions(_ context.Context, userID int64, exceptHash string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

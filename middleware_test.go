@@ -220,7 +220,8 @@ func TestIsHTTPS_table(t *testing.T) {
 	}{
 		{"plain http", "", false, false},
 		{"tls connection", "", true, true},
-		{"forwarded https", "https", false, true},
+		// Default config does NOT trust forwarded headers
+		{"forwarded https ignored by default", "https", false, false},
 		{"forwarded http", "http", false, false},
 		{"tls plus forwarded https", "https", true, true},
 	}
@@ -244,12 +245,13 @@ func TestIsHTTPS_table(t *testing.T) {
 
 func TestSessionCookieName_table(t *testing.T) {
 	t.Parallel()
+	// With deploy-time posture, name is always the same regardless of TLS
 	tests := []struct {
 		name string
 		want string
 		tls  bool
 	}{
-		{"http", CookieNameHTTP, false},
+		{"http", CookieNameSecure, false},
 		{"https", CookieNameSecure, true},
 	}
 	for _, tt := range tests {
@@ -276,7 +278,8 @@ func TestSetSessionCookie_sets_correct_attributes(t *testing.T) {
 		wantName string
 		wantSec  bool
 	}{
-		{"http session", false, "tok123", 3600, CookieNameHTTP, false},
+		// Default posture is PostureSecure: always __Host- + Secure
+		{"http session", false, "tok123", 3600, CookieNameSecure, true},
 		{"https session", true, "tok456", 7200, CookieNameSecure, true},
 	}
 	for _, tt := range tests {
@@ -333,7 +336,8 @@ func TestReadSessionCookie_table(t *testing.T) {
 		tls        bool
 		want       string
 	}{
-		{"present", CookieNameHTTP, "mytoken", false, "mytoken"},
+		// Default posture: always reads __Host-auth_session
+		{"present", CookieNameSecure, "mytoken", false, "mytoken"},
 		{"no cookie", "", "", false, ""},
 		{"wrong name", "other", "val", false, ""},
 		{"https cookie present", CookieNameSecure, "sectoken", true, "sectoken"},
@@ -428,7 +432,7 @@ func TestAuthenticate_session_cookie_valid(t *testing.T) {
 
 	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/config", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
 	gotUser, gotHash, gotErr := a.Authenticate(r)
 	if gotErr != nil {
@@ -466,7 +470,7 @@ func TestAuthenticate_expired_session_falls_through(t *testing.T) {
 
 	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
 	_, _, gotErr := a.Authenticate(r)
 	if gotErr == nil {
@@ -541,7 +545,7 @@ func TestAuthenticate_disabled_user_session(t *testing.T) {
 
 	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
 	_, _, gotErr := a.Authenticate(r)
 	if !errors.Is(gotErr, ErrUnauthenticated) {
@@ -693,7 +697,7 @@ func TestAuthenticate_session_not_found_falls_through(t *testing.T) {
 	t.Parallel()
 	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: "nonexistent-session-token"})
+	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: "nonexistent-session-token"})
 
 	_, _, gotErr := a.Authenticate(r)
 	if !errors.Is(gotErr, ErrUnauthenticated) {
@@ -723,7 +727,7 @@ func TestAuthenticate_stale_session_falls_through_to_api_key(t *testing.T) {
 
 	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/search", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: "stale-session-token"})
+	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: "stale-session-token"})
 	r.Header.Set("X-API-Key", plaintext)
 
 	gotUser, _, gotErr := a.Authenticate(r)
@@ -823,7 +827,7 @@ func TestSessionVerifier_updates_activity(t *testing.T) {
 
 	v := NewSessionVerifier(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
 	gotUser, _, gotErr := v.Verify(ctx, r)
 	if gotErr != nil {

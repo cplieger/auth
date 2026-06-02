@@ -7,16 +7,23 @@ import (
 	"time"
 )
 
+// SessionVerifierStore is the minimal interface for session verification.
+type SessionVerifierStore interface {
+	SessionReader
+	SessionActivityUpdater
+	UserReader
+}
+
 // SessionVerifier authenticates requests via session cookie.
 // Create with [NewSessionVerifier].
 type SessionVerifier struct {
-	store SessionStore
+	store SessionVerifierStore
 	cfg   authConfig
 }
 
 // NewSessionVerifier creates a SessionVerifier with the given session store and options.
 // If no idle/absolute timeout is provided, defaults of 1h and 24h are applied.
-func NewSessionVerifier(store SessionStore, opts ...Option) *SessionVerifier {
+func NewSessionVerifier(store SessionVerifierStore, opts ...Option) *SessionVerifier {
 	cfg := authConfig{}
 	for _, o := range opts {
 		if o != nil {

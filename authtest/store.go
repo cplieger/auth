@@ -1,4 +1,4 @@
-// Package authtest provides an in-memory implementation of [auth.SessionStore]
+// Package authtest provides an in-memory implementation of [auth.AuthStore]
 // for use in consumer tests. It is not intended for production use.
 package authtest
 
@@ -10,7 +10,7 @@ import (
 	"github.com/cplieger/auth"
 )
 
-// MemStore is an in-memory implementation of [auth.SessionStore] for testing.
+// MemStore is an in-memory implementation of auth interfaces for testing.
 type MemStore struct {
 	users    map[int64]*auth.User
 	sessions map[string]*auth.Session
@@ -64,6 +64,32 @@ func (m *MemStore) UpdateSessionActivity(_ context.Context, tokenHash string, no
 	defer m.mu.Unlock()
 	if s, ok := m.sessions[tokenHash]; ok {
 		s.LastActivity = now
+	}
+	return nil
+}
+
+func (m *MemStore) CreateSession(_ context.Context, s *auth.Session) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := *s
+	m.sessions[cp.TokenHash] = &cp
+	return nil
+}
+
+func (m *MemStore) DeleteSession(_ context.Context, tokenHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.sessions, tokenHash)
+	return nil
+}
+
+func (m *MemStore) DeleteUserSessions(_ context.Context, userID int64, exceptHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for hash, s := range m.sessions {
+		if s.UserID == userID && hash != exceptHash {
+			delete(m.sessions, hash)
+		}
 	}
 	return nil
 }

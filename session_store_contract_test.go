@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// SessionStoreContractSuite runs behavioral cases against any SessionStore.
-func SessionStoreContractSuite(t *testing.T, newStore func(t *testing.T) SessionStore) {
+// AuthStoreContractSuite runs behavioral cases against any AuthStore.
+func AuthStoreContractSuite(t *testing.T, newStore func(t *testing.T) AuthStore) {
 	t.Helper()
 
 	t.Run("GetSessionByHash_missing_returns_nil_nil", func(t *testing.T) {
@@ -47,9 +47,15 @@ func SessionStoreContractSuite(t *testing.T, newStore func(t *testing.T) Session
 	})
 }
 
+// SessionStoreContractSuite is an alias for backward compatibility.
+var SessionStoreContractSuite = AuthStoreContractSuite
+
+// SessionStoreContractTest is an alias for backward compatibility.
+var SessionStoreContractTest = AuthStoreContractSuite
+
 func TestFakeSessionStore_contract(t *testing.T) {
 	t.Parallel()
-	SessionStoreContractSuite(t, func(t *testing.T) SessionStore {
+	AuthStoreContractSuite(t, func(_ *testing.T) AuthStore {
 		return newFakeSessionStore()
 	})
 }
@@ -95,7 +101,3 @@ func TestFakeSessionStore_roundtrip(t *testing.T) {
 		t.Fatalf("got %+v", gotKey)
 	}
 }
-
-// SessionStoreContractTest is an alias for SessionStoreContractSuite for
-// backward compatibility with consumers that reference the shorter name.
-var SessionStoreContractTest = SessionStoreContractSuite

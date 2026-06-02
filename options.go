@@ -54,7 +54,7 @@ func WithLoginPath(path string) Option {
 }
 
 // WithCookie sets the cookie configuration for session cookies.
-func WithCookie(cfg CookieConfig) Option { //nolint:gocritic // hugeParam: value semantics intentional for config struct
+func WithCookie(cfg CookieConfig) Option {
 	return func(c *authConfig) { c.cookie = cfg }
 }
 

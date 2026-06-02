@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,8 +12,8 @@ func TestCookieConfig_Defaults(t *testing.T) {
 	if cfg.Name != "auth_session" {
 		t.Fatalf("expected auth_session, got %s", cfg.Name)
 	}
-	if cfg.Prefix != "__Host-" {
-		t.Fatalf("expected __Host-, got %s", cfg.Prefix)
+	if cfg.Posture != PostureSecure {
+		t.Fatalf("expected PostureSecure, got %d", cfg.Posture)
 	}
 	if cfg.Path != "/" {
 		t.Fatalf("expected /, got %s", cfg.Path)
@@ -24,48 +23,41 @@ func TestCookieConfig_Defaults(t *testing.T) {
 	}
 }
 
-func TestCookieConfig_CookieName_HTTPS(t *testing.T) {
+func TestCookieConfig_EffectiveName_Secure(t *testing.T) {
 	t.Parallel()
 	cfg := DefaultCookieConfig()
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.TLS = &tls.ConnectionState{}
-	if got := cfg.CookieName(r); got != "__Host-auth_session" {
+	if got := cfg.EffectiveName(); got != "__Host-auth_session" {
 		t.Fatalf("expected __Host-auth_session, got %s", got)
 	}
 }
 
-func TestCookieConfig_CookieName_HTTP(t *testing.T) {
+func TestCookieConfig_EffectiveName_InsecureLAN(t *testing.T) {
 	t.Parallel()
-	cfg := DefaultCookieConfig()
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	if got := cfg.CookieName(r); got != "auth_session" {
+	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "auth_session"}
+	if got := cfg.EffectiveName(); got != "auth_session" {
 		t.Fatalf("expected auth_session, got %s", got)
+	}
+}
+
+func TestCookieConfig_EffectiveName_ForceSecure(t *testing.T) {
+	t.Parallel()
+	cfg := CookieConfig{Posture: PostureForceSecure, Name: "auth_session"}
+	if got := cfg.EffectiveName(); got != "__Host-auth_session" {
+		t.Fatalf("expected __Host-auth_session, got %s", got)
 	}
 }
 
 func TestCookieConfig_CustomName(t *testing.T) {
 	t.Parallel()
-	cfg := CookieConfig{Name: "my_sess", Prefix: "__Secure-"}
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.TLS = &tls.ConnectionState{}
-	if got := cfg.CookieName(r); got != "__Secure-my_sess" {
-		t.Fatalf("expected __Secure-my_sess, got %s", got)
-	}
-}
-
-func TestCookieConfig_DomainSuppressesHostPrefix(t *testing.T) {
-	t.Parallel()
-	cfg := CookieConfig{Name: "sess", Domain: "example.com"}
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.TLS = &tls.ConnectionState{}
-	if got := cfg.CookieName(r); got != "sess" {
-		t.Fatalf("expected sess (no prefix), got %s", got)
+	cfg := CookieConfig{Posture: PostureSecure, Name: "my_sess"}
+	if got := cfg.EffectiveName(); got != "__Host-my_sess" {
+		t.Fatalf("expected __Host-my_sess, got %s", got)
 	}
 }
 
 func TestCookieConfig_SetAndRead(t *testing.T) {
 	t.Parallel()
-	cfg := CookieConfig{Name: "test_sess", Prefix: CookieNoPrefix}
+	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "test_sess"}
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	cfg.SetCookie(w, r, "tok123", 3600)
@@ -94,8 +86,8 @@ func TestCookieConfig_SetAndRead(t *testing.T) {
 func TestCookieConfig_CustomSameSiteAndPath(t *testing.T) {
 	t.Parallel()
 	cfg := CookieConfig{
+		Posture:  PostureInsecureLAN,
 		Name:     "s",
-		Prefix:   CookieNoPrefix,
 		Path:     "/app",
 		SameSite: http.SameSiteStrictMode,
 	}
@@ -113,23 +105,35 @@ func TestCookieConfig_CustomSameSiteAndPath(t *testing.T) {
 	}
 }
 
-func TestCookieConfig_SecureOverride(t *testing.T) {
+func TestCookieConfig_SecurePosture(t *testing.T) {
 	t.Parallel()
-	secure := true
-	cfg := CookieConfig{Name: "s", Prefix: CookieNoPrefix, Secure: &secure}
+	cfg := CookieConfig{Posture: PostureSecure, Name: "s"}
 	r := httptest.NewRequest(http.MethodGet, "/", nil) // HTTP, not HTTPS
 	w := httptest.NewRecorder()
 	cfg.SetCookie(w, r, "v", 100)
 	resp := w.Result()
 	defer resp.Body.Close()
 	if !resp.Cookies()[0].Secure {
-		t.Fatal("expected Secure=true even on HTTP when overridden")
+		t.Fatal("expected Secure=true for PostureSecure regardless of request scheme")
+	}
+}
+
+func TestCookieConfig_InsecureLAN_NoSecure(t *testing.T) {
+	t.Parallel()
+	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	cfg.SetCookie(w, r, "v", 100)
+	resp := w.Result()
+	defer resp.Body.Close()
+	if resp.Cookies()[0].Secure {
+		t.Fatal("expected Secure=false for PostureInsecureLAN")
 	}
 }
 
 func TestCookieConfig_ClearCookie(t *testing.T) {
 	t.Parallel()
-	cfg := CookieConfig{Name: "s", Prefix: CookieNoPrefix}
+	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	cfg.ClearCookie(w, r)
@@ -138,5 +142,48 @@ func TestCookieConfig_ClearCookie(t *testing.T) {
 	c := resp.Cookies()[0]
 	if c.MaxAge != -1 {
 		t.Fatalf("expected MaxAge=-1, got %d", c.MaxAge)
+	}
+}
+
+func TestCookieConfig_CacheControl(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultCookieConfig()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	cfg.SetCookie(w, r, "tok", 3600)
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("expected Cache-Control: no-store, got %q", got)
+	}
+}
+
+func TestCookieConfig_TrustForwardedHeaders_False(t *testing.T) {
+	t.Parallel()
+	cfg := CookieConfig{TrustForwardedHeaders: false}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("X-Forwarded-Proto", "https")
+	if cfg.isHTTPS(r) {
+		t.Fatal("expected isHTTPS=false when TrustForwardedHeaders=false")
+	}
+}
+
+func TestCookieConfig_TrustForwardedHeaders_True(t *testing.T) {
+	t.Parallel()
+	cfg := CookieConfig{TrustForwardedHeaders: true}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("X-Forwarded-Proto", "https")
+	if !cfg.isHTTPS(r) {
+		t.Fatal("expected isHTTPS=true when TrustForwardedHeaders=true and header set")
+	}
+}
+
+func TestCookieConfig_StableNamePerPosture(t *testing.T) {
+	t.Parallel()
+	// Verify posture produces ONE stable name regardless of request
+	cfg := DefaultCookieConfig()
+	r1 := httptest.NewRequest(http.MethodGet, "/", nil) // HTTP
+	r2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	r2.Header.Set("X-Forwarded-Proto", "https")
+	if cfg.CookieName(r1) != cfg.CookieName(r2) {
+		t.Fatal("cookie name should be stable regardless of request")
 	}
 }

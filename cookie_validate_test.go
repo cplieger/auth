@@ -8,14 +8,13 @@ func TestCookieConfig_Validate_RejectsControlChars(t *testing.T) {
 		name string
 		cfg  CookieConfig
 	}{
-		{"null in name", CookieConfig{Name: "bad\x00name", Prefix: CookieNoPrefix}},
-		{"newline in name", CookieConfig{Name: "bad\nname", Prefix: CookieNoPrefix}},
-		{"cr in name", CookieConfig{Name: "bad\rname", Prefix: CookieNoPrefix}},
-		{"semicolon in name", CookieConfig{Name: "bad;name", Prefix: CookieNoPrefix}},
-		{"space in name", CookieConfig{Name: "bad name", Prefix: CookieNoPrefix}},
-		{"null in domain", CookieConfig{Name: "ok", Prefix: CookieNoPrefix, Domain: "evil\x00.com"}},
-		{"newline in path", CookieConfig{Name: "ok", Prefix: CookieNoPrefix, Path: "/\nevil"}},
-		{"control in prefix", CookieConfig{Name: "ok", Prefix: "__Host\x01-"}},
+		{"null in name", CookieConfig{Posture: PostureInsecureLAN, Name: "bad\x00name"}},
+		{"newline in name", CookieConfig{Posture: PostureInsecureLAN, Name: "bad\nname"}},
+		{"cr in name", CookieConfig{Posture: PostureInsecureLAN, Name: "bad\rname"}},
+		{"semicolon in name", CookieConfig{Posture: PostureInsecureLAN, Name: "bad;name"}},
+		{"space in name", CookieConfig{Posture: PostureInsecureLAN, Name: "bad name"}},
+		{"null in domain", CookieConfig{Posture: PostureInsecureLAN, Name: "ok", Domain: "evil\x00.com"}},
+		{"newline in path", CookieConfig{Posture: PostureInsecureLAN, Name: "ok", Path: "/\nevil"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -34,9 +33,9 @@ func TestCookieConfig_Validate_AcceptsValid(t *testing.T) {
 		cfg  CookieConfig
 	}{
 		{"default", DefaultCookieConfig()},
-		{"custom name", CookieConfig{Name: "my_session", Prefix: CookieNoPrefix}},
-		{"with domain", CookieConfig{Name: "sess", Domain: "example.com", Prefix: CookieNoPrefix}},
-		{"with path", CookieConfig{Name: "sess", Path: "/app/auth", Prefix: CookieNoPrefix}},
+		{"custom name insecure", CookieConfig{Posture: PostureInsecureLAN, Name: "my_session"}},
+		{"with domain", CookieConfig{Posture: PostureInsecureLAN, Name: "sess", Domain: "example.com"}},
+		{"with path", CookieConfig{Posture: PostureInsecureLAN, Name: "sess", Path: "/app/auth"}},
 		{"zero value", CookieConfig{}},
 	}
 	for _, tc := range cases {

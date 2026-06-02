@@ -36,7 +36,7 @@ func BenchmarkAuthenticate(b *testing.B) {
 
 	b.Run("session_cookie", func(b *testing.B) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/test", nil)
-		req.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: token})
+		req.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: token})
 		b.ResetTimer()
 		for range b.N {
 			_, _, _ = auth.Authenticate(req)

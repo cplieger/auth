@@ -6,14 +6,20 @@ import (
 	"net/http"
 )
 
+// APIKeyVerifierStore is the minimal interface for API key verification.
+type APIKeyVerifierStore interface {
+	APIKeyReader
+	UserReader
+}
+
 // APIKeyVerifier authenticates requests via X-API-Key header or api_key query param.
 // Create with [NewAPIKeyVerifier].
 type APIKeyVerifier struct {
-	store SessionStore
+	store APIKeyVerifierStore
 }
 
-// NewAPIKeyVerifier creates an APIKeyVerifier with the given session store and options.
-func NewAPIKeyVerifier(store SessionStore, opts ...Option) *APIKeyVerifier { //nolint:revive // opts reserved for forward-compat
+// NewAPIKeyVerifier creates an APIKeyVerifier with the given store and options.
+func NewAPIKeyVerifier(store APIKeyVerifierStore, opts ...Option) *APIKeyVerifier { //nolint:revive // opts reserved for forward-compat
 	return &APIKeyVerifier{store: store}
 }
 

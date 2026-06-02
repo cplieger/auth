@@ -5,15 +5,6 @@ import (
 	"strings"
 )
 
-// Session cookie names (legacy constants for backward compatibility).
-const (
-	CookieNameSecure = "__Host-auth_session"
-	CookieNameHTTP   = "auth_session"
-)
-
-// protoHTTPS is the HTTPS protocol identifier used in forwarded-proto checks.
-const protoHTTPS = "https"
-
 // defaultCookieConfig is the package-level default used by the free functions.
 var defaultCookieConfig = DefaultCookieConfig()
 
@@ -26,15 +17,14 @@ func IsBrowserRequest(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
-// isHTTPS returns true if the request arrived over HTTPS.
+// isHTTPS returns true if the request arrived over HTTPS using the default config.
 func isHTTPS(r *http.Request) bool {
-	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == protoHTTPS
+	return defaultCookieConfig.isHTTPS(r)
 }
 
-// SessionCookieName returns the appropriate cookie name based on whether
-// the request arrived over HTTPS. Uses the default CookieConfig.
-func SessionCookieName(r *http.Request) string {
-	return defaultCookieConfig.CookieName(r)
+// SessionCookieName returns the stable cookie name using the default CookieConfig.
+func SessionCookieName(_ *http.Request) string {
+	return defaultCookieConfig.EffectiveName()
 }
 
 // SetSessionCookie sets the session cookie on the response using the default CookieConfig.

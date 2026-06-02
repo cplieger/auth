@@ -11,17 +11,26 @@ import (
 // ErrUnauthenticated is returned when no valid credential is found.
 var ErrUnauthenticated = errors.New("unauthenticated")
 
+// AuthStore is the composed interface needed by [Authenticator] — session lookup,
+// user lookup, and API key lookup.
+type AuthStore interface { //nolint:revive // stutters as auth.AuthStore but renaming would break consumers
+	SessionReader
+	SessionActivityUpdater
+	UserReader
+	APIKeyReader
+}
+
 // Authenticator resolves an HTTP request to an authenticated user.
 // Create with [NewAuthenticator].
 type Authenticator struct {
-	store SessionStore
+	store AuthStore
 	cfg   authConfig
 }
 
-// NewAuthenticator creates an Authenticator with the given session store and options.
-// The store is required; options configure logger, bypass, cookie, timeouts, etc.
+// NewAuthenticator creates an Authenticator with the given store and options.
+// The store must implement SessionReader, UserReader, and APIKeyReader.
 // If no idle/absolute timeout is provided, defaults of 1h and 24h are applied.
-func NewAuthenticator(store SessionStore, opts ...Option) *Authenticator {
+func NewAuthenticator(store AuthStore, opts ...Option) *Authenticator {
 	cfg := authConfig{}
 	for _, o := range opts {
 		if o != nil {
@@ -98,8 +107,6 @@ func HasRole(user *User, role Role) bool {
 }
 
 // ValidateRedirectURI ensures the URI is a safe relative path.
-// Returns "/" if the URI is empty, absolute, contains a scheme/host,
-// or uses backslash path separators (open-redirect prevention).
 func ValidateRedirectURI(uri string) string {
 	if uri == "/" {
 		return "/"

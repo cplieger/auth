@@ -1,58 +1,76 @@
-package auth
+// Package webauthn wraps go-webauthn/webauthn to provide WebAuthn/FIDO2
+// passkey ceremony helpers. It imports the core auth package for types
+// but never the reverse.
+package webauthn
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+
+	"github.com/cplieger/auth"
 )
+
+// CeremonyTimeout is the maximum duration a user has to complete an auth ceremony.
+const CeremonyTimeout = 5 * time.Minute
+
+// Store is the narrow interface consumed by WebAuthn/passkey handlers.
+type Store interface {
+	GetPasskeysByUserID(ctx context.Context, userID int64) ([]auth.PasskeyCredential, error)
+	UpdatePasskeyAfterLogin(ctx context.Context, credID []byte, signCount uint32, flags auth.PasskeyFlags) error
+	GetUserByID(ctx context.Context, id int64) (*auth.User, error)
+}
 
 const credNameWindowsHello = "Windows Hello"
 const credNameChromeOnMac = "Chrome on Mac" //nolint:gosec // G101 false positive: authenticator display name, not a credential
 const aaguidChromeOnMac = "adce0002-35bc-c60a-648b-0b25f1f05503"
 
-// WebAuthnUser adapts User + credentials to the webauthn.User interface.
-type WebAuthnUser struct {
-	User        *User
-	Credentials []PasskeyCredential
+// User adapts auth.User + credentials to the webauthn.User interface.
+type User struct {
+	AuthUser    *auth.User
+	Credentials []auth.PasskeyCredential
 }
 
-// NewWebAuthnUser returns a WebAuthnUser with the given user and credentials.
-func NewWebAuthnUser(user *User, creds []PasskeyCredential) (*WebAuthnUser, error) {
+// NewWebAuthnUser returns a User with the given user and credentials.
+func NewWebAuthnUser(user *auth.User, creds []auth.PasskeyCredential) (*User, error) {
 	if user == nil {
-		return nil, errors.New("auth: NewWebAuthnUser called with nil user")
+		return nil, errors.New("auth/webauthn: NewWebAuthnUser called with nil user")
 	}
-	return &WebAuthnUser{User: user, Credentials: creds}, nil
+	return &User{AuthUser: user, Credentials: creds}, nil
 }
 
 // WebAuthnID encodes the user ID as a binary varint.
-func (u *WebAuthnUser) WebAuthnID() []byte {
+func (u *User) WebAuthnID() []byte {
 	buf := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutVarint(buf, u.User.ID)
+	n := binary.PutVarint(buf, u.AuthUser.ID)
 	return buf[:n]
 }
 
 // WebAuthnName returns the username.
-func (u *WebAuthnUser) WebAuthnName() string {
-	return u.User.Username
+func (u *User) WebAuthnName() string {
+	return u.AuthUser.Username
 }
 
 // WebAuthnDisplayName returns the display name, falling back to username.
-func (u *WebAuthnUser) WebAuthnDisplayName() string {
-	if u.User.DisplayName != "" {
-		return u.User.DisplayName
+func (u *User) WebAuthnDisplayName() string {
+	if u.AuthUser.DisplayName != "" {
+		return u.AuthUser.DisplayName
 	}
-	return u.User.Username
+	return u.AuthUser.Username
 }
 
 // WebAuthnCredentials converts the stored credentials to webauthn.Credential.
-func (u *WebAuthnUser) WebAuthnCredentials() []webauthn.Credential {
+func (u *User) WebAuthnCredentials() []webauthn.Credential {
 	creds := make([]webauthn.Credential, len(u.Credentials))
 	for i := range u.Credentials {
 		creds[i] = APICredentialToWebAuthn(&u.Credentials[i])
@@ -127,7 +145,7 @@ func PasskeyFriendlyName(aaguid []byte, existingNames []string) string {
 }
 
 // APICredentialToWebAuthn converts a PasskeyCredential to a webauthn.Credential.
-func APICredentialToWebAuthn(c *PasskeyCredential) webauthn.Credential {
+func APICredentialToWebAuthn(c *auth.PasskeyCredential) webauthn.Credential {
 	var transports []protocol.AuthenticatorTransport
 	if c.Transport != "" {
 		for t := range strings.SplitSeq(c.Transport, ",") {
@@ -164,8 +182,8 @@ func APICredentialToWebAuthn(c *PasskeyCredential) webauthn.Credential {
 	return cred
 }
 
-// WebAuthnCredentialToAPI converts a webauthn.Credential to a PasskeyCredential.
-func WebAuthnCredentialToAPI(c *webauthn.Credential, userID int64, name string) *PasskeyCredential {
+// CredentialToAPI converts a webauthn.Credential to a PasskeyCredential.
+func CredentialToAPI(c *webauthn.Credential, userID int64, name string) *auth.PasskeyCredential {
 	transports := make([]string, 0, len(c.Transport))
 	for _, t := range c.Transport {
 		transports = append(transports, string(t))
@@ -183,7 +201,7 @@ func WebAuthnCredentialToAPI(c *webauthn.Credential, userID int64, name string) 
 		}
 	}
 
-	return &PasskeyCredential{
+	return &auth.PasskeyCredential{
 		UserID:          userID,
 		CredentialID:    c.ID,
 		PublicKey:       c.PublicKey,
@@ -199,4 +217,63 @@ func WebAuthnCredentialToAPI(c *webauthn.Credential, userID int64, name string) 
 		CloneWarning:    c.Authenticator.CloneWarning,
 		RawAttestation:  rawAttestation,
 	}
+}
+
+// NewWebAuthn creates a configured webauthn.WebAuthn instance.
+func NewWebAuthn(rpID, rpDisplayName string, rpOrigins []string) (*webauthn.WebAuthn, error) {
+	return webauthn.New(&webauthn.Config{
+		RPID:          rpID,
+		RPDisplayName: rpDisplayName,
+		RPOrigins:     rpOrigins,
+		Timeouts: webauthn.TimeoutsConfig{
+			Login: webauthn.TimeoutConfig{
+				Enforce:    true,
+				Timeout:    CeremonyTimeout,
+				TimeoutUVD: CeremonyTimeout,
+			},
+			Registration: webauthn.TimeoutConfig{
+				Enforce:    true,
+				Timeout:    CeremonyTimeout,
+				TimeoutUVD: CeremonyTimeout,
+			},
+		},
+	})
+}
+
+// BeginRegistration starts a WebAuthn registration ceremony.
+func BeginRegistration(wa *webauthn.WebAuthn, user *User) (*protocol.CredentialCreation, *webauthn.SessionData, error) {
+	return wa.BeginRegistration(user,
+		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
+		webauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
+			ResidentKey:      protocol.ResidentKeyRequirementRequired,
+			UserVerification: protocol.VerificationRequired,
+		}),
+		webauthn.WithExclusions(webauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()),
+		webauthn.WithExtensions(map[string]any{"credProps": true}),
+	)
+}
+
+// FinishRegistration completes a WebAuthn registration ceremony.
+func FinishRegistration(wa *webauthn.WebAuthn, user *User, sessionData *webauthn.SessionData, response *http.Request) (*webauthn.Credential, error) {
+	return wa.FinishRegistration(user, *sessionData, response)
+}
+
+// BeginLogin starts a WebAuthn assertion ceremony (discoverable login).
+func BeginLogin(wa *webauthn.WebAuthn) (*protocol.CredentialAssertion, *webauthn.SessionData, error) {
+	return wa.BeginDiscoverableLogin(
+		webauthn.WithUserVerification(protocol.VerificationRequired),
+	)
+}
+
+// BeginConditionalLogin starts a WebAuthn assertion ceremony with conditional
+// mediation, enabling browser autofill UI for passkeys.
+func BeginConditionalLogin(wa *webauthn.WebAuthn) (*protocol.CredentialAssertion, *webauthn.SessionData, error) {
+	return wa.BeginDiscoverableMediatedLogin(protocol.MediationConditional,
+		webauthn.WithUserVerification(protocol.VerificationRequired),
+	)
+}
+
+// FinishLogin completes a WebAuthn assertion ceremony (discoverable login).
+func FinishLogin(wa *webauthn.WebAuthn, sessionData *webauthn.SessionData, response *http.Request, userFinder func(rawID, userHandle []byte) (webauthn.User, error)) (webauthn.User, *webauthn.Credential, error) {
+	return wa.FinishPasskeyLogin(userFinder, *sessionData, response)
 }

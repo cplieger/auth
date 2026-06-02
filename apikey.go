@@ -30,7 +30,7 @@ func GenerateAPIKey(keyPrefix string) (plaintext, hash, displayPrefix, displaySu
 // VerifyAPIKey hashes the provided key, looks it up in the store, and
 // returns the matching APIKey record. Returns ErrInvalidAPIKey if the key
 // is not found or has expired.
-func VerifyAPIKey(ctx context.Context, store SessionStore, key string) (*Key, error) {
+func VerifyAPIKey(ctx context.Context, store APIKeyReader, key string) (*Key, error) {
 	hash := APIKeyHash(key)
 	apiKey, err := store.GetAPIKeyByHash(ctx, hash)
 	if err != nil {

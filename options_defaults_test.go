@@ -71,7 +71,7 @@ func TestNewSessionVerifier_NoOptions_SessionValid(t *testing.T) {
 	// Use NO timeout options — defaults must keep 5-minute-old session valid
 	v := NewSessionVerifier(db)
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
 	gotUser, _, gotErr := v.Verify(ctx, r)
 	if gotErr != nil {
@@ -111,7 +111,7 @@ func TestNewAuthenticator_NoOptions_SessionValid(t *testing.T) {
 
 	a := NewAuthenticator(db) // NO options
 	r, _ := http.NewRequest(http.MethodGet, "/api/data", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameHTTP, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
 	gotUser, gotHash, gotErr := a.Authenticate(r)
 	if gotErr != nil {
@@ -165,7 +165,7 @@ func TestWithX_OptionOrderDoesNotMatter(t *testing.T) {
 	t.Parallel()
 	var buf strings.Builder
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
-	cookie := CookieConfig{Name: "custom_sess", Prefix: CookieNoPrefix}
+	cookie := CookieConfig{Posture: PostureInsecureLAN, Name: "custom_sess"}
 
 	// Order A: logger, idle, abs, cookie, loginPath
 	a1 := NewAuthenticator(newFakeSessionStore(),

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -15,6 +16,10 @@ var (
 	ErrTokenExpired = errors.New("auth: token expired")
 	ErrTokenInvalid = errors.New("auth: token invalid")
 )
+
+// CSRF token format: nonce[16] ∥ expiry[8] ∥ HMAC-SHA256(key, nonce ∥ sessionHash ∥ expiry)
+// Total: 16 + 8 + 32 = 56 bytes.
+const csrfTokenLen = 16 + 8 + sha256.Size
 
 // --- Session Token Rotation ---
 
@@ -31,22 +36,33 @@ func RotateSessionToken(oldPlaintext string) (newPlaintext, newHash, oldHash str
 	return newPlaintext, newHash, oldHash, nil
 }
 
-// --- CSRF Token Helpers ---
+// --- CSRF Token Helpers (signed double-submit with random nonce) ---
 
 // CSRFToken generates a CSRF token bound to the given session hash using
-// HMAC-SHA256. The token encodes the creation timestamp for expiry checking.
-// key must be a secret known only to the server (e.g., 32 random bytes).
+// HMAC-SHA256 with a random 16-byte nonce per OWASP signed double-submit.
+// Format: base64url(nonce[16] ∥ expiry[8] ∥ HMAC-SHA256(key, nonce ∥ sessionHash ∥ expiry))
 func CSRFToken(key []byte, sessionHash string) (string, error) {
 	if len(key) == 0 {
 		return "", errors.New("auth: CSRF key must not be empty")
 	}
-	payload := make([]byte, 8, 8+sha256.Size)
-	binary.BigEndian.PutUint64(payload, uint64(time.Now().Unix())) //nolint:gosec // G115: Unix() is non-negative in practice
+	nonce := make([]byte, 16)
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	expiry := make([]byte, 8)
+	binary.BigEndian.PutUint64(expiry, uint64(time.Now().Unix())) //nolint:gosec // G115: Unix() is non-negative in practice
+
 	mac := hmac.New(sha256.New, key)
-	mac.Write(payload[:8])
+	mac.Write(nonce)
 	mac.Write([]byte(sessionHash))
-	payload = mac.Sum(payload)
-	return base64.RawURLEncoding.EncodeToString(payload), nil
+	mac.Write(expiry)
+	sig := mac.Sum(nil)
+
+	token := make([]byte, 0, csrfTokenLen)
+	token = append(token, nonce...)
+	token = append(token, expiry...)
+	token = append(token, sig...)
+	return base64.RawURLEncoding.EncodeToString(token), nil
 }
 
 // VerifyCSRFToken verifies a CSRF token against the session hash and checks
@@ -55,23 +71,25 @@ func VerifyCSRFToken(key []byte, sessionHash, token string, maxAge time.Duration
 	if len(key) == 0 {
 		return ErrTokenInvalid
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil || len(payload) != 8+sha256.Size {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil || len(raw) != csrfTokenLen {
 		return ErrTokenInvalid
 	}
-	ts := payload[:8]
-	sig := payload[8 : 8+sha256.Size]
+	nonce := raw[:16]
+	expiry := raw[16:24]
+	sig := raw[24:56]
 
 	mac := hmac.New(sha256.New, key)
-	mac.Write(ts)
+	mac.Write(nonce)
 	mac.Write([]byte(sessionHash))
+	mac.Write(expiry)
 	expected := mac.Sum(nil)
 
 	if subtle.ConstantTimeCompare(sig, expected) != 1 {
 		return ErrTokenInvalid
 	}
 
-	created := time.Unix(int64(binary.BigEndian.Uint64(ts)), 0) //nolint:gosec // G115: timestamp fits in int64
+	created := time.Unix(int64(binary.BigEndian.Uint64(expiry)), 0) //nolint:gosec // G115: timestamp fits in int64
 	if time.Since(created) > maxAge {
 		return ErrTokenExpired
 	}
@@ -83,8 +101,7 @@ func VerifyCSRFToken(key []byte, sessionHash, token string, maxAge time.Duration
 // GenerateOpaqueToken generates a cryptographically random opaque token
 // suitable for password-reset or email-verification flows. Returns the
 // plaintext token (to send to the user) and its SHA-256 hash (to store
-// in the database). The caller must store the hash with an expiry timestamp
-// and enforce single-use semantics.
+// in the database).
 func GenerateOpaqueToken() (plaintext, hash string, err error) {
 	plaintext, err = generateRandomHex(32)
 	if err != nil {
