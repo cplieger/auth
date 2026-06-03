@@ -29,8 +29,19 @@ func FuzzParsePHC(f *testing.F) {
 	f.Add("$argon2id$v=19$m=19456,t=2,p=1$" + "A" + "$" + "B")
 
 	f.Fuzz(func(t *testing.T, encoded string) {
-		// Must not panic regardless of input
-		_, _ = parsePHC(encoded)
+		p, err := parsePHC(encoded)
+		if err != nil {
+			return
+		}
+		if p.iterations < 1 {
+			t.Fatal("parsePHC succeeded but iterations < 1")
+		}
+		if p.parallelism < 1 {
+			t.Fatal("parsePHC succeeded but parallelism < 1")
+		}
+		if p.keyLen < 1 {
+			t.Fatal("parsePHC succeeded but keyLen < 1")
+		}
 	})
 }
 
