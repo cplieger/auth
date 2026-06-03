@@ -18,10 +18,8 @@ permissions:
   attestations: write
   security-events: write
 
-# Prevent overlapping releases stomping on each other.
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+# Note: concurrency is set at the reusable workflow level (cplieger/ci) — adding
+# another concurrency block here causes a startup_failure due to the duplicate.
 
 jobs:
   release:
