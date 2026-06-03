@@ -26,7 +26,7 @@ func FuzzRateLimiterAllow(f *testing.F) {
 		defer rl.Stop()
 
 		// Record up to limit
-		for i := 0; i < cfg.IPLimit; i++ {
+		for range cfg.IPLimit {
 			rl.Record(ip, username)
 		}
 
