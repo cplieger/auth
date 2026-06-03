@@ -1,13 +1,25 @@
 name: Release
+
+# Auto-publishes on merge to main following the cliff scheme:
+# - git-cliff computes the next version from conventional commits since the last tag
+# - if no bump is warranted (chore/ci/docs/style/test only), the run exits early
+# - otherwise: build, publish (Docker / npm+JSR / Go tag), tag, GitHub Release
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
   id-token: write
+  packages: write
+
+# Prevent overlapping releases stomping on each other.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
     uses: cplieger/ci/.github/workflows/release.yaml@2c6289a7dee062be6411c1cd0d3ab4f784d75f1e # v1
-    with:
-      target: go
+    secrets: inherit
