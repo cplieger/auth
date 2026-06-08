@@ -18,3 +18,8 @@ go.work.sum
 # IDE
 .idea/
 .vscode/
+
+# Kiro skill artifacts (code-review, refactor, steering-maintenance)
+**/.code-review/
+**/.refactor/
+**/.steering-maintenance/
