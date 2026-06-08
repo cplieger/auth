@@ -7,10 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cplieger/auth"
 	"github.com/go-webauthn/webauthn/protocol"
 	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
-
-	"github.com/cplieger/auth"
 )
 
 // parseAAGUID parses a UUID string into 16 bytes.

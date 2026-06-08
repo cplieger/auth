@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/cplieger/auth"
-
 	"pgregory.net/rapid"
 )
 
