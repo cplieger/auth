@@ -14,9 +14,8 @@ import (
 	"time"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
-	"golang.org/x/oauth2"
-
 	"github.com/cplieger/auth"
+	"golang.org/x/oauth2"
 )
 
 // Sentinel errors for OIDC operations.

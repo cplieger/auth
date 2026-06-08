@@ -15,10 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cplieger/auth"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-
-	"github.com/cplieger/auth"
 )
 
 // CeremonyTimeout is the maximum duration a user has to complete an auth ceremony.
@@ -31,9 +30,11 @@ type Store interface {
 	GetUserByID(ctx context.Context, id int64) (*auth.User, error)
 }
 
-const credNameWindowsHello = "Windows Hello"
-const credNameChromeOnMac = "Chrome on Mac" //nolint:gosec // G101 false positive: authenticator display name, not a credential
-const aaguidChromeOnMac = "adce0002-35bc-c60a-648b-0b25f1f05503"
+const (
+	credNameWindowsHello = "Windows Hello"
+	credNameChromeOnMac  = "Chrome on Mac" //nolint:gosec // G101 false positive: authenticator display name, not a credential
+	aaguidChromeOnMac    = "adce0002-35bc-c60a-648b-0b25f1f05503"
+)
 
 // User adapts auth.User + credentials to the webauthn.User interface.
 type User struct {
