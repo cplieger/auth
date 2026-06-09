@@ -219,3 +219,28 @@ func TestGenerateAPIKey_custom_prefix(t *testing.T) {
 		})
 	}
 }
+
+// looseAPIKeyStore returns its key for any hash, simulating a store that
+// performs a loose or buggy lookup not anchored to an exact hash match.
+type looseAPIKeyStore struct {
+	key *Key
+}
+
+func (s *looseAPIKeyStore) GetAPIKeyByHash(_ context.Context, _ string) (*Key, error) {
+	return s.key, nil
+}
+
+func TestVerifyAPIKey_rejects_hash_mismatch(t *testing.T) {
+	t.Parallel()
+	plaintext, _, _, _, err := GenerateAPIKey("ak_")
+	if err != nil {
+		t.Fatalf("GenerateAPIKey error: %v", err)
+	}
+	// The store returns a record whose stored hash does NOT match the hash of
+	// the presented key. VerifyAPIKey must reject it rather than trust the
+	// store's lookup.
+	store := &looseAPIKeyStore{key: &Key{KeyHash: "not-the-right-hash", UserID: 7}}
+	if _, err := VerifyAPIKey(context.Background(), store, plaintext); !errors.Is(err, ErrInvalidAPIKey) {
+		t.Fatalf("VerifyAPIKey(hash mismatch) = %v, want ErrInvalidAPIKey", err)
+	}
+}
