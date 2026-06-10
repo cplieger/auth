@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"time"
@@ -37,6 +38,12 @@ func VerifyAPIKey(ctx context.Context, store APIKeyReader, key string) (*Key, er
 		return nil, err
 	}
 	if apiKey == nil {
+		return nil, ErrInvalidAPIKey
+	}
+	// Defense in depth: confirm the stored hash exactly equals the computed
+	// hash in constant time. Guards against a store that performs a loose or
+	// prefix lookup and removes timing variance from the comparison.
+	if subtle.ConstantTimeCompare([]byte(hash), []byte(apiKey.KeyHash)) != 1 {
 		return nil, ErrInvalidAPIKey
 	}
 	if apiKey.ExpiresAt != nil && time.Now().After(*apiKey.ExpiresAt) {

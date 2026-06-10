@@ -137,7 +137,7 @@ authenticator := auth.NewAuthenticator(myStore, auth.WithCookie(cfg))
 ### API Keys
 
 - `GenerateAPIKey(keyPrefix) (plaintext, hash, displayPrefix, displaySuffix, error)` — API key generation
-- `VerifyAPIKey(ctx, store, key) (*Key, error)` — API key verification (with expiry check)
+- `VerifyAPIKey(ctx, store, key) (*Key, error)` — API key verification (constant-time hash equality + expiry check)
 - `APIKeyHash(key) string` — SHA-256 hash of API key
 
 ### WebAuthn
