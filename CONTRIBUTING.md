@@ -68,7 +68,7 @@ HTTP layer on the exported primitives.
 
 ## Local development
 
-Requires the Go toolchain matching `go.mod` (currently Go 1.26).
+Requires the Go toolchain matching `go.mod`.
 
 ```sh
 go build ./...
