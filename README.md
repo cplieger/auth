@@ -3,6 +3,7 @@
 [![CI](https://github.com/cplieger/auth/actions/workflows/ci.yaml/badge.svg)](https://github.com/cplieger/auth/actions/workflows/ci.yaml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/cplieger/auth.svg)](https://pkg.go.dev/github.com/cplieger/auth)
 [![Go Report Card](https://goreportcard.com/badge/github.com/cplieger/auth)](https://goreportcard.com/report/github.com/cplieger/auth)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/cplieger/auth/badge)](https://scorecard.dev/viewer/?uri=github.com/cplieger/auth)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
 > Go authentication library: Argon2id passwords, WebAuthn/passkeys, OIDC, sessions, API keys, and RBAC.
