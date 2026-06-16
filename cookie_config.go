@@ -22,6 +22,13 @@ const (
 	// PostureForceSecure forces Secure flag even behind a TLS-terminating proxy
 	// where r.TLS is nil. Requires TrustForwardedHeaders=true to detect HTTPS.
 	PostureForceSecure
+
+	// PosturePerRequest selects the cookie name and Secure flag per request,
+	// driven by isHTTPS(r) (which honors TrustForwardedHeaders): __Host-<base>
+	// with Secure over HTTPS, and the bare <base> without Secure over plain
+	// HTTP. Intended for a single instance serving both HTTP-LAN (ip:port) and
+	// HTTPS-proxied traffic. The base name stays configurable via Name.
+	PosturePerRequest
 )
 
 // CookieConfig holds configurable cookie attributes for session cookies.
@@ -70,19 +77,45 @@ func DefaultCookieConfig() CookieConfig {
 	}
 }
 
+// baseName returns the configured base cookie name, falling back to the
+// library default when unset.
+func (c *CookieConfig) baseName() string {
+	if c.Name == "" {
+		return CookieNameHTTP
+	}
+	return c.Name
+}
+
 // EffectiveName returns the ONE stable cookie name for this deployment.
 // Determined entirely by Posture at config time — no per-request logic.
+//
+// For PosturePerRequest the actual emitted/read name varies per request (see
+// CookieName / SetCookie / ReadCookie); EffectiveName returns the secure
+// __Host-<base> form as the canonical name for request-less callers and
+// validation.
 func (c *CookieConfig) EffectiveName() string {
-	base := c.Name
-	if base == "" {
-		base = CookieNameHTTP
-	}
+	base := c.baseName()
 	switch c.Posture {
 	case PostureInsecureLAN:
 		return base
-	default: // PostureSecure, PostureForceSecure
+	default: // PostureSecure, PostureForceSecure, PosturePerRequest
 		return "__Host-" + base
 	}
+}
+
+// requestName returns the cookie name appropriate for this request. In
+// PosturePerRequest mode the name depends on the request scheme (driven by
+// isHTTPS, which honors TrustForwardedHeaders); in all other postures it is the
+// stable EffectiveName() and the request is ignored.
+func (c *CookieConfig) requestName(r *http.Request) string {
+	if c.Posture == PosturePerRequest {
+		base := c.baseName()
+		if c.isHTTPS(r) {
+			return "__Host-" + base
+		}
+		return base
+	}
+	return c.EffectiveName()
 }
 
 // effectivePath returns the resolved path.
@@ -106,6 +139,16 @@ func (c *CookieConfig) isSecureCookie() bool {
 	return c.Posture != PostureInsecureLAN
 }
 
+// isSecureCookieForRequest returns whether the Secure flag should be set for
+// this request. In PosturePerRequest mode the decision follows the request
+// scheme (isHTTPS); in all other postures it follows the deploy-time posture.
+func (c *CookieConfig) isSecureCookieForRequest(r *http.Request) bool {
+	if c.Posture == PosturePerRequest {
+		return c.isHTTPS(r)
+	}
+	return c.isSecureCookie()
+}
+
 // protoHTTPS is the HTTPS protocol identifier used in forwarded-proto checks.
 const protoHTTPS = "https"
 
@@ -121,28 +164,28 @@ func (c *CookieConfig) isHTTPS(r *http.Request) bool {
 	return false
 }
 
-// CookieName returns the stable cookie name for this config. The request
-// parameter is accepted for backward compatibility but posture determines
-// the name, not the request scheme.
-func (c *CookieConfig) CookieName(_ *http.Request) string {
-	return c.EffectiveName()
+// CookieName returns the cookie name for this config. In PosturePerRequest mode
+// the name is selected from the request scheme (__Host-<base> over HTTPS, bare
+// <base> over plain HTTP); in all other postures the request is ignored and the
+// stable EffectiveName() is returned.
+func (c *CookieConfig) CookieName(r *http.Request) string {
+	return c.requestName(r)
 }
 
 // SetCookie sets the session cookie on the response using this config.
 func (c *CookieConfig) SetCookie(w http.ResponseWriter, r *http.Request, token string, maxAge int) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is conditional for LAN HTTP support
-		Name:     c.EffectiveName(),
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is conditional for LAN HTTP / per-request support
+		Name:     c.requestName(r),
 		Value:    token,
 		Path:     c.effectivePath(),
 		Domain:   c.Domain,
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   c.isSecureCookie(),
+		Secure:   c.isSecureCookieForRequest(r),
 		SameSite: c.effectiveSameSite(),
 	})
 	// Cache-Control: no-store on any response with Set-Cookie (OWASP Session Mgmt CS)
 	w.Header().Set("Cache-Control", "no-store")
-	_ = r // keep param for interface compatibility
 }
 
 // ClearCookie clears the session cookie.
@@ -150,9 +193,11 @@ func (c *CookieConfig) ClearCookie(w http.ResponseWriter, r *http.Request) {
 	c.SetCookie(w, r, "", -1)
 }
 
-// ReadCookie reads the session token from the cookie using the stable name.
+// ReadCookie reads the session token from the cookie using the
+// request-appropriate name (per-request in PosturePerRequest mode, otherwise
+// the stable EffectiveName()).
 func (c *CookieConfig) ReadCookie(r *http.Request) string {
-	ck, err := r.Cookie(c.EffectiveName())
+	ck, err := r.Cookie(c.requestName(r))
 	if err != nil {
 		return ""
 	}
