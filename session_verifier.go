@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -17,8 +18,10 @@ type SessionVerifierStore interface {
 // SessionVerifier authenticates requests via session cookie.
 // Create with [NewSessionVerifier].
 type SessionVerifier struct {
-	store SessionVerifierStore
-	cfg   authConfig
+	store        SessionVerifierStore
+	lastActivity map[string]time.Time
+	cfg          authConfig
+	activityMu   sync.Mutex
 }
 
 // NewSessionVerifier creates a SessionVerifier with the given session store and options.
@@ -31,7 +34,11 @@ func NewSessionVerifier(store SessionVerifierStore, opts ...Option) *SessionVeri
 		}
 	}
 	cfg.defaults()
-	return &SessionVerifier{store: store, cfg: cfg}
+	return &SessionVerifier{
+		store:        store,
+		cfg:          cfg,
+		lastActivity: make(map[string]time.Time),
+	}
 }
 
 // logger returns the configured logger or slog.Default().
@@ -61,8 +68,10 @@ func (v *SessionVerifier) Verify(ctx context.Context, r *http.Request) (*User, s
 	if ValidateSession(sess, v.cfg.idleTimeout, v.cfg.absTimeout, now) != nil {
 		return nil, "", nil
 	}
-	if actErr := v.store.UpdateSessionActivity(ctx, hash, now); actErr != nil {
-		v.logger().Warn("auth: session activity update failed", "error", actErr)
+	if v.shouldWriteActivity(hash, now) {
+		if actErr := v.store.UpdateSessionActivity(ctx, hash, now); actErr != nil {
+			v.logger().Warn("auth: session activity update failed", "error", actErr)
+		}
 	}
 	user, err := v.store.GetUserByID(ctx, sess.UserID)
 	if err != nil {
@@ -76,4 +85,48 @@ func (v *SessionVerifier) Verify(ctx context.Context, r *http.Request) (*User, s
 		return nil, "", nil
 	}
 	return user, hash, nil
+}
+
+// activityPruneThreshold is the lastActivity map size beyond which stale
+// entries (older than the throttle window) are pruned to bound memory growth.
+const activityPruneThreshold = 1024
+
+// shouldWriteActivity reports whether a session-activity write should be issued
+// for the given session hash at time now.
+//
+// When the configured throttle is 0 (the default), it always returns true,
+// preserving write-on-every-request behavior with no locking. When the
+// throttle d > 0, it returns true at most once per d per session hash, using a
+// concurrency-safe per-hash last-write map. The decision time is recorded as
+// the last-write time so concurrent callers within the same window collapse to
+// a single write.
+func (v *SessionVerifier) shouldWriteActivity(hash string, now time.Time) bool {
+	d := v.cfg.activityThrottle
+	if d <= 0 {
+		return true
+	}
+	v.activityMu.Lock()
+	defer v.activityMu.Unlock()
+	if last, ok := v.lastActivity[hash]; ok && now.Sub(last) < d {
+		return false
+	}
+	v.lastActivity[hash] = now
+	v.pruneActivityLocked(now, d)
+	return true
+}
+
+// pruneActivityLocked removes last-write entries older than the throttle window
+// to bound the map's growth. Entries older than d would permit a write on the
+// next request regardless, so dropping them is behavior-preserving. Pruning is
+// skipped until the map exceeds activityPruneThreshold to keep the common path
+// cheap. Callers must hold activityMu.
+func (v *SessionVerifier) pruneActivityLocked(now time.Time, d time.Duration) {
+	if len(v.lastActivity) < activityPruneThreshold {
+		return
+	}
+	for h, t := range v.lastActivity {
+		if now.Sub(t) >= d {
+			delete(v.lastActivity, h)
+		}
+	}
 }

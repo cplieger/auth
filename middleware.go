@@ -23,8 +23,9 @@ type AuthStore interface { //nolint:revive // stutters as auth.AuthStore but ren
 // Authenticator resolves an HTTP request to an authenticated user.
 // Create with [NewAuthenticator].
 type Authenticator struct {
-	store AuthStore
-	cfg   authConfig
+	store            AuthStore
+	defaultVerifiers []CredentialVerifier
+	cfg              authConfig
 }
 
 // NewAuthenticator creates an Authenticator with the given store and options.
@@ -38,7 +39,20 @@ func NewAuthenticator(store AuthStore, opts ...Option) *Authenticator {
 		}
 	}
 	cfg.defaults()
-	return &Authenticator{store: store, cfg: cfg}
+	a := &Authenticator{store: store, cfg: cfg}
+	// Build the default chain once (avoids per-request allocation). It is only
+	// consulted when no explicit chain was injected via WithVerifiers.
+	a.defaultVerifiers = []CredentialVerifier{
+		NewSessionVerifier(store,
+			WithLogger(cfg.logger),
+			WithIdleTimeout(cfg.idleTimeout),
+			WithAbsTimeout(cfg.absTimeout),
+			WithCookie(cfg.cookie),
+			WithActivityThrottle(cfg.activityThrottle),
+		),
+		NewAPIKeyVerifier(store),
+	}
+	return a
 }
 
 // syntheticAdminUser is the user injected when BypassAuth is true.
@@ -93,12 +107,14 @@ func (a *Authenticator) loginPath() string {
 	return "/login"
 }
 
-// verifiers returns the ordered list of credential verifiers.
+// verifiers returns the ordered list of credential verifiers. When an explicit
+// chain was injected via [WithVerifiers], it is used; otherwise the default
+// session + API-key chain (built once in [NewAuthenticator]) is returned.
 func (a *Authenticator) verifiers() []CredentialVerifier {
-	return []CredentialVerifier{
-		NewSessionVerifier(a.store, WithLogger(a.cfg.logger), WithIdleTimeout(a.cfg.idleTimeout), WithAbsTimeout(a.cfg.absTimeout), WithCookie(a.cfg.cookie)),
-		NewAPIKeyVerifier(a.store),
+	if len(a.cfg.verifiers) > 0 {
+		return a.cfg.verifiers
 	}
+	return a.defaultVerifiers
 }
 
 // HasRole reports whether the user is authorized for the given role.

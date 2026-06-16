@@ -81,6 +81,8 @@ All configuration is via functional options and function parameters — no impor
 - `WithIdleTimeout(d)`: session idle timeout (default: 1h)
 - `WithAbsTimeout(d)`: session absolute timeout (default: 24h)
 - `WithBypass(fn)`: bypass function for development (synthetic admin user)
+- `WithVerifiers(vs []CredentialVerifier)`: override the default verifier chain. When set, `Authenticate` iterates the supplied chain instead of the hardcoded default (`SessionVerifier` + `APIKeyVerifier`).
+- `WithActivityThrottle(d time.Duration)`: when `d>0`, `SessionVerifier` maintains a per-hash last-write map and calls `UpdateSessionActivity` at most once per `d` per hash. `d==0` (default) preserves the current write-on-every-request behavior.
 - `NewHasher(params, ...HasherOption)`: configurable Argon2id parameters; use `WithPepper([]byte)` for HMAC peppering
 - `GenerateAPIKey(prefix)`: pass your key prefix (e.g. `"ak_"`)
 - `ValidatePasswordContext(password, username, forbiddenWords)`: pass app-specific forbidden words
@@ -98,6 +100,17 @@ cfg := auth.CookieConfig{
 }
 authenticator := auth.NewAuthenticator(myStore, auth.WithCookie(cfg))
 ```
+
+#### CookiePosture
+
+`CookiePosture` controls the cookie name prefix and Secure flag strategy:
+
+| Value | Behavior |
+|-------|----------|
+| (default) | Static `__Host-` prefix when `Secure` is true/auto-HTTPS |
+| `PosturePerRequest` | Selects cookie name and Secure flag at request time via `isHTTPS(r)`. HTTPS requests get `__Host-`+base+`Secure`; plain HTTP gets the bare base name without the Secure flag. Respects `TrustForwardedHeaders` for `X-Forwarded-Proto` detection. |
+
+`PosturePerRequest` is useful for services that accept both HTTP and HTTPS traffic (e.g., behind a load balancer that terminates TLS for some paths but not others).
 
 ## API
 
@@ -168,11 +181,17 @@ authenticator := auth.NewAuthenticator(myStore, auth.WithCookie(cfg))
 - `ValidateRedirectURI(uri) string` — safe relative-path redirect validation
 - `CanDisableAuthMethod(method, hasPassword, passkeyCount, oidcEnabled, oidcLinked) bool` — check method removal safety
 - `IsBrowserRequest(r) bool` — detect browser vs API client
+- `WithVerifiers(vs []CredentialVerifier)` — override the default verifier chain
+- `WithActivityThrottle(d time.Duration)` — throttle `UpdateSessionActivity` writes (see Configuration)
 - `CredentialVerifier` — interface for pluggable credential verifiers
 - `SessionStore` / `WebAuthnStore` — interfaces for consumer to implement
-- `store.AuthStore` — composite interface (subpackage `github.com/cplieger/auth/store`)
+- `store.Composite` — composite interface (subpackage `github.com/cplieger/auth/store`)
 
 ## Subpackages
+
+### `auth/store`
+
+Composite interface `store.Composite` (renamed from `store.AuthStore` to disambiguate from `auth.AuthStore` in middleware.go). Consumers referencing `store.AuthStore` should update their alias target to `store.Composite`.
 
 ### `auth/ratelimit`
 

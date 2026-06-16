@@ -9,9 +9,9 @@ import (
 	"github.com/cplieger/auth"
 )
 
-// AuthStore is the composite store interface implemented by the
+// Composite is the composite store interface implemented by the
 // concrete persistence layer and consumed by auth.
-type AuthStore interface {
+type Composite interface {
 	UserStore
 	SessionPersister
 	PasskeyStore

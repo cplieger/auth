@@ -16,12 +16,14 @@ type Option func(*authConfig)
 
 // authConfig holds the optional configuration for auth types.
 type authConfig struct {
-	logger      *slog.Logger
-	bypass      func() bool
-	loginPath   string
-	cookie      CookieConfig
-	idleTimeout time.Duration
-	absTimeout  time.Duration
+	logger           *slog.Logger
+	bypass           func() bool
+	loginPath        string
+	verifiers        []CredentialVerifier
+	cookie           CookieConfig
+	idleTimeout      time.Duration
+	absTimeout       time.Duration
+	activityThrottle time.Duration
 }
 
 // defaults applies default values to unset fields.
@@ -66,6 +68,27 @@ func WithIdleTimeout(d time.Duration) Option {
 // WithAbsTimeout sets the session absolute timeout duration.
 func WithAbsTimeout(d time.Duration) Option {
 	return func(c *authConfig) { c.absTimeout = d }
+}
+
+// WithActivityThrottle sets the minimum interval between session-activity
+// writes for a given session within a [SessionVerifier].
+//
+// The default (d == 0) preserves write-on-every-authenticated-request
+// behavior. When d > 0, the verifier records a session-activity write at most
+// once per d per session hash, coalescing the high-frequency writes that would
+// otherwise hit the store on every request. The write remains best-effort
+// (errors are logged, never fatal).
+func WithActivityThrottle(d time.Duration) Option {
+	return func(c *authConfig) { c.activityThrottle = d }
+}
+
+// WithVerifiers sets an explicit, ordered credential-verifier chain for an
+// [Authenticator], replacing the default session + API-key chain. When the
+// provided slice is empty (or this option is not used), the default chain is
+// used. This lets consumers inject custom verifiers (e.g. a TOTP or
+// app-specific session verifier) without copying Authenticate/RequireAuth.
+func WithVerifiers(vs []CredentialVerifier) Option {
+	return func(c *authConfig) { c.verifiers = vs }
 }
 
 // HasherOption configures a [Hasher].
