@@ -16,7 +16,8 @@ import (
 // CredentialToAPI (L194).
 
 // --- CredentialToAPI L194:
-//   if len(c.Attestation.Object) > 0 || len(c.Attestation.ClientDataJSON) > 0 ---
+//
+//	if len(c.Attestation.Object) > 0 || len(c.Attestation.ClientDataJSON) > 0 ---
 //
 // Covers both boundary mutants (> 0 → >= 0, which would always marshal) via the
 // both-empty case, and both negation mutants (> 0 → <= 0) via the

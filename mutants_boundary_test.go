@@ -26,7 +26,6 @@ func TestCookieConfig_Validate_accepts_space_in_path(t *testing.T) {
 
 	// when validated
 	err := cfg.Validate()
-
 	// then the space is accepted (0x20 is not a control character)
 	if err != nil {
 		t.Errorf("Validate() with space (0x20) in Path = %v, want nil", err)
@@ -49,7 +48,6 @@ func TestArgon2Params_Validate_accepts_exact_lower_bounds(t *testing.T) {
 
 	// when validated
 	err := p.Validate()
-
 	// then the minimum lengths are accepted
 	if err != nil {
 		t.Errorf("Validate() at SaltLength=8, KeyLength=16 = %v, want nil", err)
@@ -84,7 +82,6 @@ func TestVerifyPassword_accepts_single_byte_key(t *testing.T) {
 
 	// when verifying any password against it
 	ok, err := VerifyPassword("whatever", hash)
-
 	// then parsing succeeds (no error); the password simply does not match
 	if err != nil {
 		t.Errorf("VerifyPassword(_, 1-byte-key hash) returned parse error %v, want nil", err)
@@ -104,7 +101,6 @@ func TestValidatePasswordLength_accepts_exactly_max(t *testing.T) {
 
 	// when validated (multi-factor minimum applies)
 	err := ValidatePasswordLength(pw, false)
-
 	// then exactly-max length is accepted
 	if err != nil {
 		t.Errorf("ValidatePasswordLength(len=%d, false) = %v, want nil", PasswordMaxLength, err)
@@ -139,7 +135,6 @@ func TestValidateSession_idle_exactly_at_timeout_is_valid(t *testing.T) {
 
 	// when validated
 	err := ValidateSession(sess, idle, abs, now)
-
 	// then it is still valid (expiry triggers strictly past the timeout)
 	if err != nil {
 		t.Errorf("ValidateSession(now-LastActivity == idleTimeout) = %v, want nil", err)
@@ -157,7 +152,6 @@ func TestValidateSession_absolute_exactly_at_timeout_is_valid(t *testing.T) {
 
 	// when validated
 	err := ValidateSession(sess, idle, abs, now)
-
 	// then it is still valid (expiry triggers strictly past the timeout)
 	if err != nil {
 		t.Errorf("ValidateSession(now-CreatedAt == absTimeout) = %v, want nil", err)
@@ -267,7 +261,6 @@ func TestSessionVerifier_disabled_user_logs_debug(t *testing.T) {
 
 	// when verifying the request
 	gotUser, _, err := v.Verify(ctx, newVerifierRequest(t, plaintext))
-
 	// then authentication is refused and the disabled-user attempt is logged
 	if err != nil {
 		t.Fatalf("Verify() error = %v, want nil", err)
