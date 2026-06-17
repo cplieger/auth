@@ -94,8 +94,8 @@ func TestAPICredentialToWebAuthn_restores_attestation_from_raw(t *testing.T) {
 
 // recordingHandler captures every slog.Record regardless of level.
 type recordingHandler struct {
-	mu      sync.Mutex
 	records []slog.Record
+	mu      sync.Mutex
 }
 
 func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
