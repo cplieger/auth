@@ -272,15 +272,15 @@ func TestSetSessionCookie_sets_correct_attributes(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
-		tls      bool
 		token    string
-		maxAge   int
 		wantName string
+		maxAge   int
+		tls      bool
 		wantSec  bool
 	}{
 		// Default posture is PostureSecure: always __Host- + Secure
-		{"http session", false, "tok123", 3600, CookieNameSecure, true},
-		{"https session", true, "tok456", 7200, CookieNameSecure, true},
+		{name: "http session", tls: false, token: "tok123", maxAge: 3600, wantName: CookieNameSecure, wantSec: true},
+		{name: "https session", tls: true, token: "tok456", maxAge: 7200, wantName: CookieNameSecure, wantSec: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -333,14 +333,14 @@ func TestReadSessionCookie_table(t *testing.T) {
 		name       string
 		cookieName string
 		value      string
-		tls        bool
 		want       string
+		tls        bool
 	}{
 		// Default posture: always reads __Host-auth_session
-		{"present", CookieNameSecure, "mytoken", false, "mytoken"},
-		{"no cookie", "", "", false, ""},
-		{"wrong name", "other", "val", false, ""},
-		{"https cookie present", CookieNameSecure, "sectoken", true, "sectoken"},
+		{name: "present", cookieName: CookieNameSecure, value: "mytoken", tls: false, want: "mytoken"},
+		{name: "no cookie", cookieName: "", value: "", tls: false, want: ""},
+		{name: "wrong name", cookieName: "other", value: "val", tls: false, want: ""},
+		{name: "https cookie present", cookieName: CookieNameSecure, value: "sectoken", tls: true, want: "sectoken"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
