@@ -105,9 +105,9 @@ authenticator := auth.NewAuthenticator(myStore, auth.WithCookie(cfg))
 
 `CookiePosture` controls the cookie name prefix and Secure flag strategy:
 
-| Value | Behavior |
-|-------|----------|
-| (default) | Static `__Host-` prefix when `Secure` is true/auto-HTTPS |
+| Value               | Behavior                                                                                                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (default)           | Static `__Host-` prefix when `Secure` is true/auto-HTTPS                                                                                                                                                                                          |
 | `PosturePerRequest` | Selects cookie name and Secure flag at request time via `isHTTPS(r)`. HTTPS requests get `__Host-`+base+`Secure`; plain HTTP gets the bare base name without the Secure flag. Respects `TrustForwardedHeaders` for `X-Forwarded-Proto` detection. |
 
 `PosturePerRequest` is useful for services that accept both HTTP and HTTPS traffic (e.g., behind a load balancer that terminates TLS for some paths but not others).
@@ -220,19 +220,19 @@ store.AddUser(&auth.User{Username: "test", Role: auth.RoleUser, Enabled: true})
 
 The following features are intentionally out of scope. Each has a documented rationale and, where applicable, a recommended alternative.
 
-| Feature | Rationale |
-|---------|-----------|
-| Full OIDC token-refresh orchestration | Library handles authentication, not long-lived API access. Consumer uses `oauth2.TokenSource`. |
-| Multi-provider OIDC registry | Consumer instantiates multiple `OIDCProvider` instances. |
-| WebAuthn MDS verification | Enterprise feature with large surface. Consumer can call `credential.Verify(mdsProvider)` using stored `RawAttestation`. |
-| OIDC back-channel logout | Enterprise SSO feature beyond scope of auth-primitive library. |
-| Hierarchical RBAC / permission sets | Library provides `HasRole` for flat role check. Use casbin/ory-keto for complex RBAC. |
-| Cookie encryption/signing | Opaque-token architecture; cookie value is a random token, not sensitive data. |
-| OIDC userinfo endpoint | ID token claims sufficient for authentication. Consumer can call `provider.UserInfo()`. |
-| WebAuthn attestation conveyance | Default `none` is correct for most RPs per FIDO Alliance guidance. |
-| WebAuthn credential filtering (AAGUID) | Enterprise policy. Consumer can use go-webauthn's filtering directly. |
-| Passkey well-known endpoints | Browser/credential-manager concern, not server-auth-library concern. |
-| CSRF middleware (full HTTP layer) | Library provides `CSRFToken`/`VerifyCSRFToken` primitives; full middleware is HTTP-framework-specific. |
+| Feature                                | Rationale                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Full OIDC token-refresh orchestration  | Library handles authentication, not long-lived API access. Consumer uses `oauth2.TokenSource`.                           |
+| Multi-provider OIDC registry           | Consumer instantiates multiple `OIDCProvider` instances.                                                                 |
+| WebAuthn MDS verification              | Enterprise feature with large surface. Consumer can call `credential.Verify(mdsProvider)` using stored `RawAttestation`. |
+| OIDC back-channel logout               | Enterprise SSO feature beyond scope of auth-primitive library.                                                           |
+| Hierarchical RBAC / permission sets    | Library provides `HasRole` for flat role check. Use casbin/ory-keto for complex RBAC.                                    |
+| Cookie encryption/signing              | Opaque-token architecture; cookie value is a random token, not sensitive data.                                           |
+| OIDC userinfo endpoint                 | ID token claims sufficient for authentication. Consumer can call `provider.UserInfo()`.                                  |
+| WebAuthn attestation conveyance        | Default `none` is correct for most RPs per FIDO Alliance guidance.                                                       |
+| WebAuthn credential filtering (AAGUID) | Enterprise policy. Consumer can use go-webauthn's filtering directly.                                                    |
+| Passkey well-known endpoints           | Browser/credential-manager concern, not server-auth-library concern.                                                     |
+| CSRF middleware (full HTTP layer)      | Library provides `CSRFToken`/`VerifyCSRFToken` primitives; full middleware is HTTP-framework-specific.                   |
 
 ## License
 
