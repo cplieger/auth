@@ -21,16 +21,16 @@ and observe timing.
 
 ## Threats and mitigations
 
-| Threat | Mitigation | Evidence |
-|---|---|---|
-| Offline cracking of stolen password hashes | Argon2id with per-user salt and bounded parameters | `argon2_bounds_test.go`, `hasher.go` |
-| Timing side channels on secret comparison | constant-time comparison for API keys, tokens, cookies | `apikey_verifier.go`, `token.go`, dedicated timing tests |
-| Forged/replayed session cookies | authenticated cookie encoding + validation | `auth_cookie.go`, `cookie_validate_test.go`, `cookie_fuzz_test.go` |
-| CSRF | strict same-origin / token CSRF checks | `csrf_strict_test.go` |
-| Malformed input to parsers (PHC strings, cookies, WebAuthn, tokens) | hardened parsing under fuzz | `*_fuzz_test.go`, `parsephc_panic_test.go`, `webauthn/webauthn_fuzz_test.go` |
-| Brute-force / credential stuffing | rate limiting (`auth/ratelimit`) | rate-limit tests |
-| Adversarial misuse / abuse cases | red-team test suite | `redteam_test.go`, `redteam_fuzz_test.go` |
-| Broken crypto choices | only Go stdlib / `golang.org/x/crypto`; no home-grown crypto | source review |
+| Threat                                                              | Mitigation                                                   | Evidence                                                                     |
+| ------------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Offline cracking of stolen password hashes                          | Argon2id with per-user salt and bounded parameters           | `argon2_bounds_test.go`, `hasher.go`                                         |
+| Timing side channels on secret comparison                           | constant-time comparison for API keys, tokens, cookies       | `apikey_verifier.go`, `token.go`, dedicated timing tests                     |
+| Forged/replayed session cookies                                     | authenticated cookie encoding + validation                   | `auth_cookie.go`, `cookie_validate_test.go`, `cookie_fuzz_test.go`           |
+| CSRF                                                                | strict same-origin / token CSRF checks                       | `csrf_strict_test.go`                                                        |
+| Malformed input to parsers (PHC strings, cookies, WebAuthn, tokens) | hardened parsing under fuzz                                  | `*_fuzz_test.go`, `parsephc_panic_test.go`, `webauthn/webauthn_fuzz_test.go` |
+| Brute-force / credential stuffing                                   | rate limiting (`auth/ratelimit`)                             | rate-limit tests                                                             |
+| Adversarial misuse / abuse cases                                    | red-team test suite                                          | `redteam_test.go`, `redteam_fuzz_test.go`                                    |
+| Broken crypto choices                                               | only Go stdlib / `golang.org/x/crypto`; no home-grown crypto | source review                                                                |
 
 ## Cryptography
 
