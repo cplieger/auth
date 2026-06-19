@@ -173,6 +173,16 @@ func (c *CookieConfig) CookieName(r *http.Request) string {
 }
 
 // SetCookie sets the session cookie on the response using this config.
+//
+// The Secure attribute follows the posture via isSecureCookieForRequest: it is
+// set for every HTTPS posture and omitted only for plain-HTTP delivery, namely
+// PostureInsecureLAN or PosturePerRequest over an HTTP request. Omitting Secure
+// there is deliberate: a browser never sends a Secure cookie over plain HTTP,
+// so forcing it would silently break sessions on HTTP-only LAN deployments. The
+// default posture (PostureSecure) always sets Secure. Static analysis flags the
+// conditional Secure (gosec G124, CodeQL go/cookie-secure-not-set); that is a
+// documented false positive for the HTTP-LAN support, exercised by
+// cookie_perrequest_test.go and redteam_test.go.
 func (c *CookieConfig) SetCookie(w http.ResponseWriter, r *http.Request, token string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is conditional for LAN HTTP / per-request support
 		Name:     c.requestName(r),
