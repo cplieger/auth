@@ -29,6 +29,8 @@ func NewMemStore() *MemStore {
 	}
 }
 
+// GetSessionByHash returns the session stored under tokenHash, or (nil, nil)
+// if no such session exists.
 func (m *MemStore) GetSessionByHash(_ context.Context, tokenHash string) (*auth.Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -39,6 +41,7 @@ func (m *MemStore) GetSessionByHash(_ context.Context, tokenHash string) (*auth.
 	return s, nil
 }
 
+// GetUserByID returns the user with the given id, or (nil, nil) if absent.
 func (m *MemStore) GetUserByID(_ context.Context, id int64) (*auth.User, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -49,6 +52,7 @@ func (m *MemStore) GetUserByID(_ context.Context, id int64) (*auth.User, error) 
 	return u, nil
 }
 
+// GetAPIKeyByHash returns the API key stored under hash, or (nil, nil) if absent.
 func (m *MemStore) GetAPIKeyByHash(_ context.Context, hash string) (*auth.Key, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -59,6 +63,8 @@ func (m *MemStore) GetAPIKeyByHash(_ context.Context, hash string) (*auth.Key, e
 	return k, nil
 }
 
+// UpdateSessionActivity sets LastActivity to now for the session identified by
+// tokenHash. It is a no-op if no such session exists.
 func (m *MemStore) UpdateSessionActivity(_ context.Context, tokenHash string, now time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -68,6 +74,7 @@ func (m *MemStore) UpdateSessionActivity(_ context.Context, tokenHash string, no
 	return nil
 }
 
+// CreateSession stores a copy of s, keyed by its TokenHash.
 func (m *MemStore) CreateSession(_ context.Context, s *auth.Session) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -76,6 +83,7 @@ func (m *MemStore) CreateSession(_ context.Context, s *auth.Session) error {
 	return nil
 }
 
+// DeleteSession removes the session stored under tokenHash, if any.
 func (m *MemStore) DeleteSession(_ context.Context, tokenHash string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -83,6 +91,8 @@ func (m *MemStore) DeleteSession(_ context.Context, tokenHash string) error {
 	return nil
 }
 
+// DeleteUserSessions removes every session belonging to userID except the one
+// whose token hash equals exceptHash.
 func (m *MemStore) DeleteUserSessions(_ context.Context, userID int64, exceptHash string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
