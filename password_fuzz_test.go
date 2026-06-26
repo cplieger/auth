@@ -79,3 +79,51 @@ func FuzzVerifyPassword(f *testing.F) {
 		}
 	})
 }
+
+// FuzzParsePHC drives untrusted PHC hash strings through the parser. Beyond not
+// panicking (the parser feeds argon2.IDKey, which panics on zero params), it
+// pins the invariant that a successful parse always yields params safe for
+// argon2: iterations, parallelism, and key length are all >= 1.
+func FuzzParsePHC(f *testing.F) {
+	seeds := []string{
+		"$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$c29tZWhhc2g",
+		"",
+		"$",
+		"$$$$$$",
+		"not-a-hash",
+		"$bcrypt$invalid$format$$$",
+		"$notargon2id$v=19$m=19456,t=2,p=1$AAAA$BBBB",
+		"$argon2id$v=99$m=19456,t=2,p=1$AAAA$BBBB",
+		"$argon2id$v=0$m=19456,t=2,p=1$AAAA$BBBB",
+		"$argon2id$v=19$m=0,t=0,p=0$$",
+		"$argon2id$v=19$m=4294967295,t=4294967295,p=255$AAAA$BBBB",
+		"$argon2id$v=19$m=-1,t=2,p=1$AAAA$BBBB",
+		"$argon2id$v=19$m=19456,t=0,p=1$AAAA$BBBB",
+		"$argon2id$v=19$m=19456,t=2,p=0$AAAA$BBBB",
+		"$argon2id$v=19$m=19456,t=2,p=1$$BBBB",
+		"$argon2id$v=19$m=19456,t=2,p=1$AAAA$",
+		"$argon2id$v=19$m=19456,t=2,p=1$!!!invalid-base64!!!$BBBB",
+		"$argon2id$v=19$m=19456,t=2,p=1$AAAA$!!!invalid-base64!!!",
+		"$argon2id$v=19$m=19456,t=2,p=1$" + strings.Repeat("A", 10000) + "$BBBB",
+		"$argon2id$v=19$m=19456,t=2,p=1$AAAA$" + strings.Repeat("B", 10000),
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+
+	f.Fuzz(func(t *testing.T, encoded string) {
+		p, err := parsePHC(encoded)
+		if err != nil {
+			return
+		}
+		if p.iterations < 1 {
+			t.Errorf("parsePHC(%q) succeeded with iterations = %d, want >= 1", encoded, p.iterations)
+		}
+		if p.parallelism < 1 {
+			t.Errorf("parsePHC(%q) succeeded with parallelism = %d, want >= 1", encoded, p.parallelism)
+		}
+		if p.keyLen < 1 {
+			t.Errorf("parsePHC(%q) succeeded with keyLen = %d, want >= 1", encoded, p.keyLen)
+		}
+	})
+}

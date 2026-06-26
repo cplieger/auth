@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strings"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -141,5 +142,30 @@ func TestNeedsRehash(t *testing.T) {
 				t.Errorf("NeedsRehash(%q) = %v, want %v", tc.hash, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestVerifyPassword_oneByteKey_parsesButDoesNotMatch(t *testing.T) {
+	t.Parallel()
+	// A well-formed PHC hash whose key is exactly one byte (base64 "AA") is the
+	// lower bound of the key-length check: parsing must succeed (no error) and
+	// the password simply must not match.
+	const hash = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHRzYWx0c2Fs$AA"
+	ok, err := VerifyPassword("whatever", hash)
+	if err != nil {
+		t.Errorf("VerifyPassword(_, 1-byte-key hash) error = %v, want nil", err)
+	}
+	if ok {
+		t.Errorf("VerifyPassword(_, 1-byte-key hash) = true, want false")
+	}
+}
+
+func TestValidatePasswordLength_exactlyMax_accepted(t *testing.T) {
+	t.Parallel()
+	// A password of exactly PasswordMaxLength runes is accepted; rejection
+	// begins strictly past the maximum.
+	pw := strings.Repeat("a", PasswordMaxLength)
+	if err := ValidatePasswordLength(pw, false); err != nil {
+		t.Errorf("ValidatePasswordLength(len=%d, false) = %v, want nil", PasswordMaxLength, err)
 	}
 }

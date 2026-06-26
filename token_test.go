@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"testing"
 	"time"
 )
@@ -81,9 +82,56 @@ func TestCSRFToken_WrongKey(t *testing.T) {
 
 func TestCSRFToken_EmptyKey(t *testing.T) {
 	t.Parallel()
-	_, err := CSRFToken(nil, "sess")
-	if err == nil {
-		t.Fatal("expected error for empty key")
+	if _, err := CSRFToken(nil, "sess"); err == nil {
+		t.Fatal("CSRFToken(nil key) = nil error, want error")
+	}
+	if _, err := CSRFToken([]byte{}, "sess"); err == nil {
+		t.Fatal("CSRFToken(empty key) = nil error, want error")
+	}
+	if err := VerifyCSRFToken(nil, "sess", "anything", time.Hour); err != ErrTokenInvalid {
+		t.Fatalf("VerifyCSRFToken(nil key) = %v, want ErrTokenInvalid", err)
+	}
+}
+
+func TestCSRFToken_NegativeMaxAge_expired(t *testing.T) {
+	t.Parallel()
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	token, err := CSRFToken(key, "sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyCSRFToken(key, "sess", token, -time.Second); err != ErrTokenExpired {
+		t.Fatalf("VerifyCSRFToken(maxAge=-1s) = %v, want ErrTokenExpired", err)
+	}
+}
+
+func TestCSRFToken_BitFlip_rejected(t *testing.T) {
+	t.Parallel()
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	token, err := CSRFToken(key, "sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Flipping any single bit of the token (nonce, expiry, or HMAC) must break
+	// verification: the signature covers the whole payload.
+	for i := range raw {
+		tampered := make([]byte, len(raw))
+		copy(tampered, raw)
+		tampered[i] ^= 0x01
+		encoded := base64.RawURLEncoding.EncodeToString(tampered)
+		if err := VerifyCSRFToken(key, "sess", encoded, time.Hour); err == nil {
+			t.Fatalf("VerifyCSRFToken accepted a token with a flipped bit at byte %d", i)
+		}
 	}
 }
 
