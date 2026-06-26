@@ -170,3 +170,42 @@ func TestProperty_SessionCleanupCompleteness(t *testing.T) {
 		}
 	})
 }
+
+// TestValidateSession_timeoutBoundaries pins the idle and absolute expiry
+// boundaries: expiry triggers strictly past the timeout, so a session aged
+// exactly at the limit is still valid, and a zero timeout expires immediately.
+func TestValidateSession_timeoutBoundaries(t *testing.T) {
+	t.Parallel()
+	const (
+		idle = time.Hour
+		abs  = 24 * time.Hour
+	)
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name         string
+		idle, abs    time.Duration
+		lastActivity time.Time
+		createdAt    time.Time
+		wantErr      bool
+	}{
+		{"idle exactly at timeout", idle, abs, now.Add(-idle), now, false},
+		{"idle just past timeout", idle, abs, now.Add(-idle - time.Nanosecond), now, true},
+		{"idle just under timeout", idle, abs, now.Add(-idle + time.Nanosecond), now, false},
+		{"absolute exactly at timeout", idle, abs, now, now.Add(-abs), false},
+		{"absolute just past timeout", idle, abs, now, now.Add(-abs - time.Nanosecond), true},
+		{"zero idle expires immediately", 0, abs, now.Add(-time.Nanosecond), now, true},
+		{"zero absolute expires immediately", idle, 0, now, now.Add(-time.Nanosecond), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sess := &Session{LastActivity: tc.lastActivity, CreatedAt: tc.createdAt}
+			err := ValidateSession(sess, tc.idle, tc.abs, now)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("ValidateSession(idle=%v, abs=%v, lastActivity %v ago, created %v ago) = %v, wantErr=%v",
+					tc.idle, tc.abs, now.Sub(tc.lastActivity), now.Sub(tc.createdAt), err, tc.wantErr)
+			}
+		})
+	}
+}

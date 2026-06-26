@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -185,5 +186,74 @@ func TestCookieConfig_StableNamePerPosture(t *testing.T) {
 	r2.Header.Set("X-Forwarded-Proto", "https")
 	if cfg.CookieName(r1) != cfg.CookieName(r2) {
 		t.Fatal("cookie name should be stable regardless of request")
+	}
+}
+
+// TestCookieConfig_Secure_ReadCookie_ignoresUnprefixedCookie pins the
+// session-fixation defense: under a __Host- posture, a bare (unprefixed) cookie
+// an attacker can set over plain HTTP must not be read as the session token.
+func TestCookieConfig_Secure_ReadCookie_ignoresUnprefixedCookie(t *testing.T) {
+	t.Parallel()
+	cfg := CookieConfig{Posture: PostureSecure, Name: "sess"}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&http.Cookie{Name: "sess", Value: "attacker-token"})
+	if got := cfg.ReadCookie(r); got != "" {
+		t.Fatalf("ReadCookie read an unprefixed cookie %q under PostureSecure, want \"\" (session fixation)", got)
+	}
+}
+
+// TestCookieConfig_isHTTPS_trustedRequiresExactHTTPS confirms that, even when
+// X-Forwarded-Proto is trusted, only the exact lowercase value "https" is
+// treated as HTTPS. Case variants, surrounding whitespace, and comma lists must
+// not be accepted, so a proxy misconfiguration cannot silently flip the scheme.
+func TestCookieConfig_isHTTPS_trustedRequiresExactHTTPS(t *testing.T) {
+	t.Parallel()
+	cfg := CookieConfig{TrustForwardedHeaders: true}
+	cases := []struct {
+		value string
+		want  bool
+	}{
+		{"https", true},
+		{"HTTPS", false},
+		{"Https", false},
+		{"https ", false},
+		{" https", false},
+		{"https,http", false},
+		{"https, http", false},
+		{"http", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Parallel()
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tc.value != "" {
+				r.Header.Set("X-Forwarded-Proto", tc.value)
+			}
+			if got := cfg.isHTTPS(r); got != tc.want {
+				t.Errorf("isHTTPS(X-Forwarded-Proto=%q) = %v, want %v", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCookieConfig_SetCookie_alwaysHttpOnly confirms the session cookie is
+// HttpOnly under every posture, including the insecure-LAN posture that drops
+// the Secure flag.
+func TestCookieConfig_SetCookie_alwaysHttpOnly(t *testing.T) {
+	t.Parallel()
+	for _, posture := range []CookiePosture{PostureSecure, PostureInsecureLAN, PostureForceSecure, PosturePerRequest} {
+		t.Run(fmt.Sprintf("posture_%d", posture), func(t *testing.T) {
+			t.Parallel()
+			cfg := CookieConfig{Posture: posture, Name: "s"}
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			w := httptest.NewRecorder()
+			cfg.SetCookie(w, r, "tok", 3600)
+			resp := w.Result()
+			defer resp.Body.Close()
+			if c := resp.Cookies()[0]; !c.HttpOnly {
+				t.Errorf("posture %d: cookie HttpOnly = false, want true", posture)
+			}
+		})
 	}
 }

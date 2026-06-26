@@ -36,6 +36,7 @@ func TestCookieConfig_Validate_AcceptsValid(t *testing.T) {
 		{"custom name insecure", CookieConfig{Posture: PostureInsecureLAN, Name: "my_session"}},
 		{"with domain", CookieConfig{Posture: PostureInsecureLAN, Name: "sess", Domain: "example.com"}},
 		{"with path", CookieConfig{Posture: PostureInsecureLAN, Name: "sess", Path: "/app/auth"}},
+		{"space in path", CookieConfig{Posture: PostureInsecureLAN, Name: "sess", Path: "/a b"}},
 		{"zero value", CookieConfig{}},
 	}
 	for _, tc := range cases {

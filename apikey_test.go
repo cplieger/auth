@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -243,4 +244,56 @@ func TestVerifyAPIKey_rejects_hash_mismatch(t *testing.T) {
 	if _, err := VerifyAPIKey(context.Background(), store, plaintext); !errors.Is(err, ErrInvalidAPIKey) {
 		t.Fatalf("VerifyAPIKey(hash mismatch) = %v, want ErrInvalidAPIKey", err)
 	}
+}
+
+func TestProperty_APIKeyRoleInheritance(t *testing.T) {
+	t.Parallel()
+	rapid.Check(t, func(rt *rapid.T) {
+		db := newFakeSessionStore()
+		ctx := context.Background()
+
+		role := rapid.SampledFrom([]string{"admin", "user"}).Draw(rt, "role")
+		username := fmt.Sprintf("user_%s", rapid.StringMatching(`[a-z]{4,8}`).Draw(rt, "username"))
+
+		user := &User{
+			Username:     username,
+			PasswordHash: "dummy",
+			Role:         Role(role),
+			Enabled:      true,
+		}
+		if err := db.CreateUser(ctx, user); err != nil {
+			rt.Fatalf("CreateUser: %v", err)
+		}
+
+		plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
+		if err != nil {
+			rt.Fatalf("GenerateAPIKey: %v", err)
+		}
+		apiKey := &Key{
+			UserID:    user.ID,
+			KeyHash:   hash,
+			KeyPrefix: prefix,
+			KeySuffix: suffix,
+			Label:     "test",
+		}
+		if err := db.CreateAPIKey(ctx, apiKey); err != nil {
+			rt.Fatalf("CreateAPIKey: %v", err)
+		}
+
+		verified, err := VerifyAPIKey(ctx, db, plaintext)
+		if err != nil {
+			rt.Fatalf("VerifyAPIKey: %v", err)
+		}
+		if verified.UserID != user.ID {
+			rt.Fatalf("API key user ID mismatch: got %d, want %d", verified.UserID, user.ID)
+		}
+
+		resolvedUser, err := db.GetUserByID(ctx, verified.UserID)
+		if err != nil {
+			rt.Fatalf("GetUserByID: %v", err)
+		}
+		if resolvedUser.Role != Role(role) {
+			rt.Fatalf("role mismatch: got %s, want %s", resolvedUser.Role, role)
+		}
+	})
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"pgregory.net/rapid"
 )
 
 // AuthStoreContractSuite runs behavioral cases against any AuthStore.
@@ -100,4 +102,68 @@ func TestFakeSessionStore_roundtrip(t *testing.T) {
 	if gotKey == nil || gotKey.Label != "k" {
 		t.Fatalf("got %+v", gotKey)
 	}
+}
+
+// TestProperty_SessionInvalidationOnPasswordChange verifies the store contract
+// that DeleteUserSessions removes every session for a user except the one
+// explicitly preserved (the caller's current session on a password change).
+func TestProperty_SessionInvalidationOnPasswordChange(t *testing.T) {
+	t.Parallel()
+	rapid.Check(t, func(rt *rapid.T) {
+		db := newFakeSessionStore()
+		ctx := context.Background()
+
+		user := &User{
+			Username:     "testuser",
+			PasswordHash: "dummy",
+			Role:         "admin",
+			Enabled:      true,
+		}
+		if err := db.CreateUser(ctx, user); err != nil {
+			rt.Fatalf("CreateUser: %v", err)
+		}
+
+		n := rapid.IntRange(1, 10).Draw(rt, "numSessions")
+		hashes := make([]string, n)
+		for i := range n {
+			_, hash, err := GenerateSessionToken()
+			if err != nil {
+				rt.Fatalf("GenerateSessionToken[%d]: %v", i, err)
+			}
+			hashes[i] = hash
+			sess := &Session{
+				TokenHash:  hash,
+				UserID:     user.ID,
+				AuthMethod: "password",
+				IPAddress:  "127.0.0.1",
+			}
+			if err := db.CreateSession(ctx, sess); err != nil {
+				rt.Fatalf("CreateSession[%d]: %v", i, err)
+			}
+		}
+
+		keepIdx := rapid.IntRange(0, n-1).Draw(rt, "keepIdx")
+		exceptHash := hashes[keepIdx]
+
+		if err := db.DeleteUserSessions(ctx, user.ID, exceptHash); err != nil {
+			rt.Fatalf("DeleteUserSessions: %v", err)
+		}
+
+		remaining := 0
+		for _, h := range hashes {
+			s, err := db.GetSessionByHash(ctx, h)
+			if err != nil {
+				rt.Fatalf("GetSessionByHash(%s): %v", h, err)
+			}
+			if s != nil {
+				remaining++
+				if h != exceptHash {
+					rt.Fatalf("session %s should have been deleted", h)
+				}
+			}
+		}
+		if remaining != 1 {
+			rt.Fatalf("expected 1 remaining session, got %d", remaining)
+		}
+	})
 }
