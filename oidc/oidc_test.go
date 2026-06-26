@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/cplieger/auth"
+	"golang.org/x/oauth2"
 	"pgregory.net/rapid"
 )
 
@@ -129,5 +131,42 @@ func TestValidateConfig_errors(t *testing.T) {
 				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// AuthorizationURL must carry the CSRF state, the OIDC nonce, and the PKCE
+// S256 challenge and method so the provider can enforce them. The Provider is
+// built directly from a static oauth2 config to avoid live provider discovery.
+func TestAuthorizationURL_includes_pkce_and_state(t *testing.T) {
+	t.Parallel()
+
+	p := &Provider{
+		oauth2: oauth2.Config{
+			ClientID:    "test-client",
+			RedirectURL: "https://app.example.com/callback",
+			Endpoint:    oauth2.Endpoint{AuthURL: "https://idp.example.com/authorize"},
+			Scopes:      []string{"openid", "profile", "email"},
+		},
+	}
+
+	raw := p.AuthorizationURL("state-xyz", "nonce-abc", "challenge-123")
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("AuthorizationURL produced an unparseable URL %q: %v", raw, err)
+	}
+	q := u.Query()
+
+	if got := q.Get("state"); got != "state-xyz" {
+		t.Errorf("state = %q, want %q", got, "state-xyz")
+	}
+	if got := q.Get("nonce"); got != "nonce-abc" {
+		t.Errorf("nonce = %q, want %q", got, "nonce-abc")
+	}
+	if got := q.Get("code_challenge"); got != "challenge-123" {
+		t.Errorf("code_challenge = %q, want %q", got, "challenge-123")
+	}
+	if got := q.Get("code_challenge_method"); got != "S256" {
+		t.Errorf("code_challenge_method = %q, want S256 (PKCE)", got)
 	}
 }

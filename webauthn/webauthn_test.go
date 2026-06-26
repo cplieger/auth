@@ -2,9 +2,12 @@ package webauthn
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cplieger/auth"
@@ -245,5 +248,148 @@ func TestBeginLogin_requires_user_verification(t *testing.T) {
 	uv := assertion.Response.UserVerification
 	if uv != protocol.VerificationRequired {
 		t.Errorf("UserVerification = %q, want %q", uv, protocol.VerificationRequired)
+	}
+}
+
+// CredentialToAPI populates RawAttestation only when the source credential
+// carries attestation data: an attestation with either an Object or a
+// ClientDataJSON present is marshalled, while a fully-empty attestation leaves
+// RawAttestation nil.
+func TestCredentialToAPI_RawAttestation_presence(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		object         []byte
+		clientDataJSON []byte
+		wantNil        bool
+	}{
+		{"both_empty_omits_attestation", nil, nil, true},
+		{"object_only_marshals", []byte{0xa0, 0x01}, nil, false},
+		{"clientdata_only_marshals", nil, []byte(`{"x":1}`), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			waCred := &gowebauthn.Credential{
+				ID:            []byte{1, 2, 3},
+				PublicKey:     []byte{4, 5, 6},
+				Authenticator: gowebauthn.Authenticator{AAGUID: make([]byte, 16)},
+			}
+			waCred.Attestation.Object = tt.object
+			waCred.Attestation.ClientDataJSON = tt.clientDataJSON
+
+			got := CredentialToAPI(waCred, 7, "key")
+
+			if tt.wantNil && got.RawAttestation != nil {
+				t.Errorf("CredentialToAPI(Object=%v, ClientDataJSON=%v).RawAttestation = %v, want nil",
+					tt.object, tt.clientDataJSON, got.RawAttestation)
+			}
+			if !tt.wantNil && got.RawAttestation == nil {
+				t.Errorf("CredentialToAPI(Object=%v, ClientDataJSON=%v).RawAttestation = nil, want non-nil",
+					tt.object, tt.clientDataJSON)
+			}
+		})
+	}
+}
+
+// APICredentialToWebAuthn restores a non-empty RawAttestation back into the
+// credential's Attestation object byte-for-byte (the inverse of CredentialToAPI).
+func TestAPICredentialToWebAuthn_restores_attestation_from_raw(t *testing.T) {
+	t.Parallel()
+
+	src := &gowebauthn.Credential{ID: []byte{9}, PublicKey: []byte{8}}
+	src.Attestation.Object = []byte{0xa0, 0x01, 0x02}
+	apiCred := CredentialToAPI(src, 1, "key")
+	if len(apiCred.RawAttestation) == 0 {
+		t.Fatal("setup: expected non-empty RawAttestation from CredentialToAPI")
+	}
+
+	got := APICredentialToWebAuthn(apiCred)
+
+	if !bytes.Equal(got.Attestation.Object, []byte{0xa0, 0x01, 0x02}) {
+		t.Errorf("APICredentialToWebAuthn restored Attestation.Object = %v, want %v",
+			got.Attestation.Object, []byte{0xa0, 0x01, 0x02})
+	}
+}
+
+// recordingHandler captures every slog.Record regardless of level.
+type recordingHandler struct {
+	records []slog.Record
+	mu      sync.Mutex
+}
+
+func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r.Clone())
+	return nil
+}
+
+func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
+
+func (h *recordingHandler) countMsg(sub string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, r := range h.records {
+		if bytes.Contains([]byte(r.Message), []byte(sub)) {
+			n++
+		}
+	}
+	return n
+}
+
+// withCapturedDefaultLogger temporarily swaps slog's default logger for a
+// capturing handler and restores it on cleanup. APICredentialToWebAuthn logs
+// via the package-global slog, so these tests cannot run in parallel.
+func withCapturedDefaultLogger(t *testing.T) *recordingHandler {
+	t.Helper()
+	h := &recordingHandler{}
+	orig := slog.Default()
+	slog.SetDefault(slog.New(h))
+	t.Cleanup(func() { slog.SetDefault(orig) })
+	return h
+}
+
+// An empty RawAttestation is skipped silently: APICredentialToWebAuthn logs no
+// corrupted-attestation warning when there is nothing to unmarshal.
+func TestAPICredentialToWebAuthn_empty_raw_attestation_no_warning(t *testing.T) {
+	h := withCapturedDefaultLogger(t)
+
+	cred := &auth.PasskeyCredential{
+		CredentialID: []byte{1},
+		PublicKey:    []byte{2},
+		AAGUID:       make([]byte, 16),
+	}
+
+	_ = APICredentialToWebAuthn(cred)
+
+	if n := h.countMsg("corrupted attestation"); n != 0 {
+		t.Errorf("APICredentialToWebAuthn(empty RawAttestation) logged %d corrupted-attestation warnings, want 0", n)
+	}
+}
+
+// A non-empty but malformed RawAttestation is reported once as a
+// corrupted-attestation warning and otherwise ignored.
+func TestAPICredentialToWebAuthn_invalid_raw_attestation_warns(t *testing.T) {
+	h := withCapturedDefaultLogger(t)
+
+	cred := &auth.PasskeyCredential{
+		CredentialID:   []byte{1},
+		PublicKey:      []byte{2},
+		AAGUID:         make([]byte, 16),
+		RawAttestation: []byte("not valid json"),
+	}
+
+	_ = APICredentialToWebAuthn(cred)
+
+	if n := h.countMsg("corrupted attestation"); n != 1 {
+		t.Errorf("APICredentialToWebAuthn(invalid RawAttestation) logged %d corrupted-attestation warnings, want 1", n)
 	}
 }

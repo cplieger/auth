@@ -529,6 +529,42 @@ func TestRateLimiter_Reset_empty_username(t *testing.T) {
 	}
 }
 
+func TestRateLimiter_Reset_clears_account_window(t *testing.T) {
+	t.Parallel()
+
+	// Reset must clear the per-account window, not only the per-IP window. The
+	// IP limit is set high enough that only the account window can block, so the
+	// request is re-permitted solely because Reset cleared the account window.
+	// The other Reset tests use DefaultConfig, where the per-IP window does the
+	// blocking, so they never isolate the account branch.
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       1000,
+		IPWindow:      15 * time.Minute,
+		AcctLimit:     3,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    100,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	const ip, user = "10.0.0.1", "alice"
+	for range cfg.AcctLimit {
+		rl.Record(ip, user)
+	}
+	if allowed, _ := rl.Allow(ip, user); allowed {
+		t.Fatal("Allow() = true before Reset, want false (account window at limit)")
+	}
+
+	rl.Reset(ip, user)
+
+	if allowed, _ := rl.Allow(ip, user); !allowed {
+		t.Fatal("Allow() = false after Reset, want true (account window cleared)")
+	}
+}
+
 func BenchmarkRateLimiter_parallel(b *testing.B) {
 	rl := NewRateLimiter(context.Background(), DefaultConfig())
 	defer rl.Stop()
