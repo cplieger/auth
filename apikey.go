@@ -2,9 +2,7 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
 	"errors"
 	"time"
 )
@@ -17,11 +15,11 @@ var ErrInvalidAPIKey = errors.New("invalid API key")
 // It returns the plaintext key, its SHA-256 hash, a display prefix
 // (first 8 chars), and a display suffix (last 4 chars).
 func GenerateAPIKey(keyPrefix string) (plaintext, hash, displayPrefix, displaySuffix string, err error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
+	randomHex, err := generateRandomHex(32)
+	if err != nil {
 		return "", "", "", "", err
 	}
-	plaintext = keyPrefix + hex.EncodeToString(b)
+	plaintext = keyPrefix + randomHex
 	hash = APIKeyHash(plaintext)
 	displayPrefix = plaintext[:min(8, len(plaintext))]
 	displaySuffix = plaintext[max(0, len(plaintext)-4):]

@@ -98,8 +98,7 @@ type OIDCConfig struct {
 	AutoRedirect bool   `json:"auto_redirect" yaml:"auto_redirect"`
 }
 
-// HTTP header and query parameter constants for API key authentication.
-const (
-	HeaderXAPIKey    = "X-Api-Key" //nolint:gosec // G101 false positive: header name, not a credential
-	QueryParamAPIKey = "api_key"
-)
+// HeaderXAPIKey is the HTTP header carrying the API key. Keys are accepted only
+// via this header, never a URL query parameter; a query-string key leaks into
+// access logs, browser history, and the Referer header (CWE-598).
+const HeaderXAPIKey = "X-Api-Key" //nolint:gosec // G101 false positive: header name, not a credential

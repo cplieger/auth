@@ -32,7 +32,7 @@ func BenchmarkAuthenticate(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	auth := NewAuthenticator(store, WithIdleTimeout(24*time.Hour), WithAbsTimeout(7*24*time.Hour))
+	auth := mustAuthenticator(b, store, WithIdleTimeout(24*time.Hour), WithAbsTimeout(7*24*time.Hour))
 
 	b.Run("session_cookie", func(b *testing.B) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/test", nil)

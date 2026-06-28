@@ -65,7 +65,7 @@ func TestIsHTTPS_table(t *testing.T) {
 			if tt.forwardedProto != "" {
 				r.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
 			}
-			got := isHTTPS(r)
+			got := defaultCookieConfig.isHTTPS(r)
 			if got != tt.want {
 				t.Errorf("isHTTPS() = %v, want %v", got, tt.want)
 			}

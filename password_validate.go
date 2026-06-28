@@ -84,20 +84,20 @@ func CheckBreachedPassword(ctx context.Context, client *http.Client, password st
 
 	resp, err := client.Do(req)
 	if err != nil {
-		slog.Warn("breached password check failed, allowing password", "error", err)
+		slog.Warn("auth: breached password check failed, allowing password", "error", err)
 		return false, nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		slog.Warn("breached password check: unexpected status, allowing password",
+		slog.Warn("auth: breached password check: unexpected status, allowing password",
 			"status", resp.StatusCode)
 		return false, nil
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20)) // 2 MB cap
 	if err != nil {
-		slog.Warn("breached password check: read response failed, allowing password", "error", err)
+		slog.Warn("auth: breached password check: read response failed, allowing password", "error", err)
 		return false, nil
 	}
 

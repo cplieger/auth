@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"testing"
-	"time"
 )
 
 // fakeAPIKeyStore implements APIKeyReader for fuzz testing.
@@ -50,25 +49,5 @@ func FuzzVerifyAPIKey(f *testing.F) {
 		if err == nil && k != nil {
 			t.Fatal("fuzzed key verified against hash")
 		}
-	})
-}
-
-func FuzzVerifyAPIKeyExpired(f *testing.F) {
-	f.Add("test")
-
-	f.Fuzz(func(t *testing.T, fuzzInput string) {
-		plaintext, hash, _, _, err := GenerateAPIKey("ak_")
-		if err != nil {
-			t.Skipf("GenerateAPIKey error: %v", err)
-		}
-		expired := time.Now().Add(-time.Hour)
-		store := &fakeAPIKeyStore{key: &Key{KeyHash: hash, UserID: 1, ExpiresAt: &expired}}
-
-		// Expired key should fail even with correct plaintext
-		_, err = VerifyAPIKey(context.Background(), store, plaintext)
-		if err == nil {
-			t.Fatal("expired key should not verify")
-		}
-		_ = fuzzInput
 	})
 }

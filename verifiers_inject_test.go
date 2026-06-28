@@ -30,7 +30,7 @@ func TestAuthenticator_WithVerifiers_ResolvesThroughInjected(t *testing.T) {
 	want := &User{ID: 42, Username: "custom", Role: RoleUser, Enabled: true}
 	var called int32
 
-	a := NewAuthenticator(db, WithVerifiers([]CredentialVerifier{
+	a := mustAuthenticator(t, db, WithVerifiers([]CredentialVerifier{
 		&stubVerifier{user: want, hash: "custom-hash", called: &called},
 	}))
 
@@ -75,7 +75,7 @@ func TestAuthenticator_WithVerifiers_EmptyFallsBackToDefault(t *testing.T) {
 	}
 
 	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
-	a := NewAuthenticator(db,
+	a := mustAuthenticator(t, db,
 		WithCookie(cfg),
 		WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
 		WithVerifiers(nil), // empty -> default chain

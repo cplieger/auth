@@ -25,6 +25,7 @@ var (
 	ErrOIDCTokenInvalid  = errors.New("oidc: ID token verification failed")
 	ErrOIDCNonceMismatch = errors.New("oidc: nonce mismatch")
 	ErrOIDCConfigInvalid = errors.New("oidc: invalid configuration")
+	ErrOIDCNoUsername    = errors.New("oidc: token has no preferred_username or email claim")
 )
 
 // Claims holds the verified claims extracted from an OIDC ID token.
@@ -136,6 +137,15 @@ func (p *Provider) AuthorizationURL(state, nonce, codeChallenge string) string {
 }
 
 // Exchange exchanges an authorization code for tokens and validates the ID token.
+//
+// nonce MUST be the non-empty, single-use, cryptographically random value that was
+// bound into the matching AuthorizationURL call and stored server-side for this
+// authorization request. Exchange requires the ID token's nonce claim to equal it,
+// defending against ID-token replay and injection. Passing nonce == "" is rejected
+// with ErrOIDCNonceMismatch (fail closed): a conformant authorization-code flow
+// always supplies a non-empty nonce, so an empty value can never satisfy the check.
+// PKCE and the state parameter remain in force regardless, but the nonce binding is
+// a distinct protection.
 func (p *Provider) Exchange(ctx context.Context, code, codeVerifier, nonce string) (*Claims, *time.Time, error) {
 	ctx, cancel := context.WithTimeout(ctx, oidcHTTPTimeout)
 	defer cancel()
@@ -157,8 +167,8 @@ func (p *Provider) Exchange(ctx context.Context, code, codeVerifier, nonce strin
 		return nil, nil, errors.Join(ErrOIDCTokenInvalid, err)
 	}
 
-	if idToken.Nonce != nonce {
-		return nil, nil, ErrOIDCNonceMismatch
+	if err := checkNonce(nonce, idToken.Nonce); err != nil {
+		return nil, nil, err
 	}
 
 	// OIDC Core §3.1.3.7 step 3: if multiple audiences, verify azp equals ClientID.
@@ -169,8 +179,8 @@ func (p *Provider) Exchange(ctx context.Context, code, codeVerifier, nonce strin
 		if err := idToken.Claims(&rawClaims); err != nil {
 			return nil, nil, errors.Join(ErrOIDCTokenInvalid, err)
 		}
-		if rawClaims.AZP != p.config.ClientID {
-			return nil, nil, fmt.Errorf("%w: azp claim %q does not match client_id", ErrOIDCTokenInvalid, rawClaims.AZP)
+		if err := checkAuthorizedParty(idToken.Audience, rawClaims.AZP, p.config.ClientID); err != nil {
+			return nil, nil, err
 		}
 	}
 
@@ -187,15 +197,60 @@ func (p *Provider) Exchange(ctx context.Context, code, codeVerifier, nonce strin
 	return &claims, expiry, nil
 }
 
-// ResolveUser maps an OIDC identity to a user by (issuer, sub) only.
-func ResolveUser(claims *Claims, existingBySub *auth.User) (user *auth.User, isNew bool) {
+// checkNonce enforces ID-token nonce binding: the ID token's nonce claim MUST
+// equal the caller-supplied expected nonce. An empty expected nonce is rejected
+// (fail closed) — a conformant authorization-code flow always supplies a
+// non-empty nonce, and treating "" as valid would make the equality check
+// trivially pass (got == "" == expected), silently disabling replay/injection
+// protection. Returns ErrOIDCNonceMismatch on any mismatch or an empty nonce.
+func checkNonce(expected, got string) error {
+	if expected == "" || got != expected {
+		return ErrOIDCNonceMismatch
+	}
+	return nil
+}
+
+// checkAuthorizedParty enforces OIDC Core 3.1.3.7 step 3: an ID token
+// carrying more than one audience MUST also carry an azp (authorized party)
+// claim equal to the client_id. A single-audience token needs no azp check.
+// The returned error wraps ErrOIDCTokenInvalid.
+func checkAuthorizedParty(audiences []string, azp, clientID string) error {
+	if len(audiences) <= 1 {
+		return nil
+	}
+	if azp != clientID {
+		return fmt.Errorf("%w: azp claim %q does not match client_id", ErrOIDCTokenInvalid, azp)
+	}
+	return nil
+}
+
+// usernameFromClaims derives the username for a just-in-time provisioned user:
+// preferred_username, falling back to email. It returns ErrOIDCNoUsername when
+// the verified token carries neither, so a caller never provisions an account
+// with a blank username. The identity is still keyed on (issuer, sub); this
+// guards only the human-facing username.
+func usernameFromClaims(claims *Claims) (string, error) {
+	if claims.PreferredUsername != "" {
+		return claims.PreferredUsername, nil
+	}
+	if claims.Email != "" {
+		return claims.Email, nil
+	}
+	return "", ErrOIDCNoUsername
+}
+
+// ResolveUser maps an OIDC identity to a user by (issuer, sub) only. For a new
+// identity (existingBySub == nil) it provisions a user from the token claims; it
+// returns ErrOIDCNoUsername if the token has neither preferred_username nor email,
+// rather than provisioning an account with a blank username.
+func ResolveUser(claims *Claims, existingBySub *auth.User) (user *auth.User, isNew bool, err error) {
 	if existingBySub != nil {
-		return existingBySub, false
+		return existingBySub, false, nil
 	}
 
-	username := claims.PreferredUsername
-	if username == "" {
-		username = claims.Email
+	username, err := usernameFromClaims(claims)
+	if err != nil {
+		return nil, false, err
 	}
 
 	return &auth.User{
@@ -206,5 +261,5 @@ func ResolveUser(claims *Claims, existingBySub *auth.User) (user *auth.User, isN
 		OIDCSub:     claims.Subject,
 		OIDCIssuer:  claims.Issuer,
 		Enabled:     true,
-	}, true
+	}, true, nil
 }

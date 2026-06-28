@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 )
 
@@ -12,29 +13,45 @@ type APIKeyVerifierStore interface {
 	UserReader
 }
 
-// APIKeyVerifier authenticates requests via X-API-Key header or api_key query param.
+// APIKeyVerifier authenticates requests via the X-API-Key header.
 // Create with [NewAPIKeyVerifier].
 type APIKeyVerifier struct {
 	store APIKeyVerifierStore
+	cfg   authConfig
 }
 
 // NewAPIKeyVerifier creates an APIKeyVerifier with the given store and options.
-func NewAPIKeyVerifier(store APIKeyVerifierStore, opts ...Option) *APIKeyVerifier { //nolint:revive // opts reserved for forward-compat
-	return &APIKeyVerifier{store: store}
+func NewAPIKeyVerifier(store APIKeyVerifierStore, opts ...Option) *APIKeyVerifier {
+	cfg := authConfig{}
+	for _, o := range opts {
+		if o != nil {
+			o(&cfg)
+		}
+	}
+	return &APIKeyVerifier{store: store, cfg: cfg}
 }
 
-// Verify checks the API key header and query param, returns the user if valid.
+// logger returns the configured logger or slog.Default().
+func (v *APIKeyVerifier) logger() *slog.Logger {
+	if v.cfg.logger != nil {
+		return v.cfg.logger
+	}
+	return slog.Default()
+}
+
+// Verify checks the X-API-Key header and returns the user if the key is valid.
+// API keys are accepted only via the header, never via a URL query parameter;
+// a key in a query string leaks into access logs, browser history, and the
+// Referer header (CWE-598).
 func (v *APIKeyVerifier) Verify(ctx context.Context, r *http.Request) (*User, string, error) {
 	key := r.Header.Get(HeaderXAPIKey)
-	if key == "" {
-		key = r.URL.Query().Get(QueryParamAPIKey)
-	}
 	if key == "" {
 		return nil, "", nil
 	}
 	apiKey, err := VerifyAPIKey(ctx, v.store, key)
 	if err != nil {
 		if errors.Is(err, ErrInvalidAPIKey) {
+			v.logger().Debug("auth: API key verification failed", "error", err)
 			return nil, "", ErrUnauthenticated
 		}
 		return nil, "", err
@@ -44,6 +61,7 @@ func (v *APIKeyVerifier) Verify(ctx context.Context, r *http.Request) (*User, st
 		return nil, "", err
 	}
 	if user == nil || !user.Enabled {
+		v.logger().Debug("auth: API key resolved to missing or disabled user", "user_id", apiKey.UserID)
 		return nil, "", ErrUnauthenticated
 	}
 	return user, "", nil

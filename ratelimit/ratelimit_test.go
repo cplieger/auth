@@ -1,11 +1,15 @@
 package ratelimit
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"pgregory.net/rapid"
@@ -579,4 +583,575 @@ func BenchmarkRateLimiter_parallel(b *testing.B) {
 			i++
 		}
 	})
+}
+
+func TestSlidingWindow_count_boundary(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	const window = time.Minute
+	tests := []struct {
+		name    string
+		offsets []time.Duration // age of each timestamp before now, ascending
+		want    int
+	}{
+		{"empty", nil, 0},
+		{"all within window", []time.Duration{0, 30 * time.Second, 59 * time.Second}, 3},
+		{"boundary kept", []time.Duration{time.Minute}, 1},
+		{"all expired", []time.Duration{2 * time.Minute, 3 * time.Minute}, 0},
+		{"mixed", []time.Duration{10 * time.Second, 30 * time.Second, 90 * time.Second}, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			w := &slidingWindow{}
+			// Insert oldest first so timestamps are ascending, matching the
+			// monotonic insertion order count() assumes in production.
+			for _, off := range slices.Backward(tt.offsets) {
+				w.add(now.Add(-off))
+			}
+			got := w.count(now, window)
+			if got != tt.want {
+				t.Errorf("count(window=%v) = %d, want %d", window, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeConfig(t *testing.T) {
+	t.Parallel()
+	def := DefaultConfig()
+	tests := []struct {
+		name string
+		in   Config
+		want Config
+	}{
+		{
+			name: "valid config passes through unchanged",
+			in:   def,
+			want: def,
+		},
+		{
+			name: "non-positive PruneInterval replaced with default",
+			in:   Config{IPLimit: 10, IPWindow: time.Minute, AcctLimit: 20, AcctWindow: time.Hour, PruneInterval: 0, MaxEntries: 5},
+			want: Config{IPLimit: 10, IPWindow: time.Minute, AcctLimit: 20, AcctWindow: time.Hour, PruneInterval: def.PruneInterval, MaxEntries: 5},
+		},
+		{
+			name: "negative IPWindow replaced with default",
+			in:   Config{IPLimit: 10, IPWindow: -time.Second, AcctLimit: 20, AcctWindow: time.Hour, PruneInterval: time.Minute, MaxEntries: 5},
+			want: Config{IPLimit: 10, IPWindow: def.IPWindow, AcctLimit: 20, AcctWindow: time.Hour, PruneInterval: time.Minute, MaxEntries: 5},
+		},
+		{
+			name: "zero AcctWindow replaced with default",
+			in:   Config{IPLimit: 10, IPWindow: time.Minute, AcctLimit: 20, AcctWindow: 0, PruneInterval: time.Minute, MaxEntries: 5},
+			want: Config{IPLimit: 10, IPWindow: time.Minute, AcctLimit: 20, AcctWindow: def.AcctWindow, PruneInterval: time.Minute, MaxEntries: 5},
+		},
+		{
+			name: "non-positive MaxEntries replaced with default",
+			in:   Config{IPLimit: 10, IPWindow: time.Minute, AcctLimit: 20, AcctWindow: time.Hour, PruneInterval: time.Minute, MaxEntries: -1},
+			want: Config{IPLimit: 10, IPWindow: time.Minute, AcctLimit: 20, AcctWindow: time.Hour, PruneInterval: time.Minute, MaxEntries: def.MaxEntries},
+		},
+		{
+			name: "non-positive limits left as supplied (guarded at use site)",
+			in:   Config{IPLimit: 0, IPWindow: time.Minute, AcctLimit: -5, AcctWindow: time.Hour, PruneInterval: time.Minute, MaxEntries: 5},
+			want: Config{IPLimit: 0, IPWindow: time.Minute, AcctLimit: -5, AcctWindow: time.Hour, PruneInterval: time.Minute, MaxEntries: 5},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := normalizeConfig(tt.in)
+			if got != tt.want {
+				t.Errorf("normalizeConfig(%+v) = %+v, want %+v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRateLimiter_nonpositive_IPLimit_fails_closed(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       0,
+		IPWindow:      time.Minute,
+		AcctLimit:     100,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    100,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	if allowed, _ := rl.Allow("10.0.0.1", ""); !allowed {
+		t.Fatal("Allow before any Record = false, want true (empty window is always allowed)")
+	}
+
+	rl.Record("10.0.0.1", "")
+	allowed, retryAfter := rl.Allow("10.0.0.1", "")
+	if allowed {
+		t.Fatal("Allow after one Record with IPLimit<=0 = true, want false (must fail closed)")
+	}
+	if retryAfter <= 0 {
+		t.Errorf("retryAfter = %v, want > 0 when blocked", retryAfter)
+	}
+}
+
+func TestRateLimiter_eviction_drops_least_recently_active(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       10,
+		IPWindow:      time.Hour,
+		AcctLimit:     100,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    2,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	rl.Record("stale", "")
+	now = now.Add(time.Minute)
+	rl.Record("active", "")
+	now = now.Add(time.Minute)
+	rl.Record("active", "")
+	now = now.Add(time.Minute)
+
+	rl.Record("new", "")
+
+	rl.muIP.Lock()
+	_, staleKept := rl.ipWindows["stale"]
+	_, activeKept := rl.ipWindows["active"]
+	_, newKept := rl.ipWindows["new"]
+	n := len(rl.ipWindows)
+	rl.muIP.Unlock()
+
+	if n != cfg.MaxEntries {
+		t.Fatalf("ipWindows size = %d, want %d", n, cfg.MaxEntries)
+	}
+	if staleKept {
+		t.Error("least-recently-active \"stale\" was retained, want evicted")
+	}
+	if !activeKept {
+		t.Error("most-recently-active \"active\" was evicted, want retained")
+	}
+	if !newKept {
+		t.Error("new key \"new\" was not admitted after eviction")
+	}
+}
+
+func TestRateLimiter_eviction_protects_at_limit_entry(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       2,
+		IPWindow:      time.Hour,
+		AcctLimit:     100,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    2,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	// "blocked" reaches the limit at t0, giving it the oldest last-activity
+	// timestamp, so pure LRU would evict it first. "fresh" is recorded once a
+	// minute later and stays under the limit.
+	rl.Record("blocked", "")
+	rl.Record("blocked", "")
+	now = now.Add(time.Minute)
+	rl.Record("fresh", "")
+	now = now.Add(time.Minute)
+
+	if allowed, _ := rl.Allow("blocked", ""); allowed {
+		t.Fatal("precondition: \"blocked\" should be at limit before eviction")
+	}
+
+	// Admitting "new" forces an eviction. The at-limit "blocked" entry must be
+	// protected; the not-at-limit "fresh" entry is the victim instead.
+	rl.Record("new", "")
+
+	rl.muIP.Lock()
+	_, blockedKept := rl.ipWindows["blocked"]
+	_, freshKept := rl.ipWindows["fresh"]
+	_, newKept := rl.ipWindows["new"]
+	n := len(rl.ipWindows)
+	rl.muIP.Unlock()
+
+	if n != cfg.MaxEntries {
+		t.Fatalf("ipWindows size = %d, want %d", n, cfg.MaxEntries)
+	}
+	if !blockedKept {
+		t.Error("at-limit \"blocked\" was evicted, want retained (its block must survive)")
+	}
+	if freshKept {
+		t.Error("not-at-limit \"fresh\" was retained, want evicted")
+	}
+	if !newKept {
+		t.Error("new key \"new\" was not admitted after eviction")
+	}
+	if allowed, _ := rl.Allow("blocked", ""); allowed {
+		t.Error("Allow(\"blocked\") = true after eviction, want false (block must persist)")
+	}
+}
+
+func TestRateLimiter_eviction_all_at_limit_falls_back_to_lru(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       1,
+		IPWindow:      time.Hour,
+		AcctLimit:     100,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    2,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	// With IPLimit=1 a single Record puts each key at its limit, so no harmless
+	// (not-at-limit) victim exists. Eviction must then fall back to pure
+	// least-recently-active ordering, evicting the oldest entry.
+	rl.Record("old", "")
+	now = now.Add(time.Minute)
+	rl.Record("recent", "")
+	now = now.Add(time.Minute)
+
+	rl.Record("new", "")
+
+	rl.muIP.Lock()
+	_, oldKept := rl.ipWindows["old"]
+	_, recentKept := rl.ipWindows["recent"]
+	_, newKept := rl.ipWindows["new"]
+	n := len(rl.ipWindows)
+	rl.muIP.Unlock()
+
+	if n != cfg.MaxEntries {
+		t.Fatalf("ipWindows size = %d, want %d", n, cfg.MaxEntries)
+	}
+	if oldKept {
+		t.Error("least-recently-active \"old\" was retained, want evicted (all-at-limit LRU fallback)")
+	}
+	if !recentKept {
+		t.Error("most-recently-active \"recent\" was evicted, want retained")
+	}
+	if !newKept {
+		t.Error("new key \"new\" was not admitted after eviction")
+	}
+}
+
+func TestRateLimiter_pruneLoop_prunes_stale_on_tick(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cfg := Config{
+			IPLimit:       10,
+			IPWindow:      time.Second,
+			AcctLimit:     100,
+			AcctWindow:    time.Second,
+			PruneInterval: time.Minute,
+			MaxEntries:    100,
+		}
+		rl := NewRateLimiter(context.Background(), cfg)
+
+		rl.Record("10.0.0.1", "alice")
+
+		time.Sleep(2 * cfg.PruneInterval)
+		synctest.Wait()
+
+		rl.muIP.Lock()
+		ipN := len(rl.ipWindows)
+		rl.muIP.Unlock()
+		rl.muAcct.Lock()
+		acctN := len(rl.acctWindows)
+		rl.muAcct.Unlock()
+		if ipN != 0 || acctN != 0 {
+			t.Errorf("pruneLoop tick left ip=%d acct=%d windows, want 0,0", ipN, acctN)
+		}
+
+		rl.Stop()
+		synctest.Wait()
+	})
+}
+
+func TestRateLimiter_capWarning_logs_once_per_episode(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       10,
+		IPWindow:      time.Hour,
+		AcctLimit:     100,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    2,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	// Four distinct keys with MaxEntries=2 force two evictions in one
+	// saturation episode; the edge-triggered warning must fire only once.
+	rl.Record("a", "")
+	rl.Record("b", "")
+	rl.Record("c", "")
+	rl.Record("d", "")
+
+	if got := strings.Count(buf.String(), "entry cap reached"); got != 1 {
+		t.Errorf("cap-reached warnings = %d, want 1 (edge-triggered: one warn per saturation episode)", got)
+	}
+}
+
+func TestRateLimiter_capWarning_rearms_after_prune_below_cap(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       10,
+		IPWindow:      time.Second,
+		AcctLimit:     100,
+		AcctWindow:    time.Second,
+		PruneInterval: time.Hour,
+		MaxEntries:    2,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	// First saturation episode: the third key evicts and warns once.
+	rl.Record("a", "")
+	rl.Record("b", "")
+	rl.Record("c", "")
+
+	// Age every entry out and prune below the cap so the warning re-arms.
+	now = now.Add(2 * time.Second)
+	rl.prune()
+
+	// Second episode: the sixth key evicts and must warn again.
+	rl.Record("d", "")
+	rl.Record("e", "")
+	rl.Record("f", "")
+
+	if got := strings.Count(buf.String(), "entry cap reached"); got != 2 {
+		t.Errorf("cap-reached warnings = %d, want 2 (warn re-arms after prune drops below cap)", got)
+	}
+}
+
+func TestRateLimiter_nonpositive_IPLimit_expired_window_reallows(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       0,
+		IPWindow:      time.Minute,
+		AcctLimit:     100,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    100,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	// One recorded attempt blocks under a non-positive IPLimit (fail-closed).
+	rl.Record("10.0.0.1", "")
+
+	// Age the attempt out: the window is now empty but still present in the map
+	// (prune has not run). The next Allow reaches retryAfter with n==0 and a
+	// non-positive limit, the only state where the "|| n == 0" guard decides the
+	// result: without it, n < limit is false and the w.timestamps[0] read panics.
+	now = now.Add(2 * time.Minute)
+	allowed, retryAfter := rl.Allow("10.0.0.1", "")
+	if !allowed {
+		t.Fatalf("Allow on an aged-out window with IPLimit<=0 = false, want true (attempts expired); retryAfter=%v", retryAfter)
+	}
+	if retryAfter != 0 {
+		t.Errorf("retryAfter = %v, want 0 (window empty)", retryAfter)
+	}
+}
+
+func TestRateLimiter_eviction_drops_emptied_window_first(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       10,
+		IPWindow:      time.Minute,
+		AcctLimit:     100,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    2,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	rl.Record("emptied", "")
+	rl.Record("kept", "")
+
+	// Age both windows past IPWindow, then Allow("emptied") so count() reslices
+	// its window to length 0 while it stays in the map. At eviction time
+	// "emptied" has a zero-value last timestamp (the len(w.timestamps) > 0 guard
+	// leaves last unset), so it sorts oldest and is dropped first; "kept" still
+	// carries its recorded timestamp.
+	now = now.Add(2 * time.Minute)
+	rl.Allow("emptied", "")
+
+	rl.Record("new", "") // map at MaxEntries: admitting "new" forces an eviction
+
+	rl.muIP.Lock()
+	_, emptiedKept := rl.ipWindows["emptied"]
+	_, keptKept := rl.ipWindows["kept"]
+	_, newKept := rl.ipWindows["new"]
+	n := len(rl.ipWindows)
+	rl.muIP.Unlock()
+
+	if n != cfg.MaxEntries {
+		t.Fatalf("ipWindows size = %d, want %d", n, cfg.MaxEntries)
+	}
+	if emptiedKept {
+		t.Error("emptied window was retained, want evicted first (zero-value last timestamp sorts oldest)")
+	}
+	if !keptKept {
+		t.Error("\"kept\" was evicted, want retained")
+	}
+	if !newKept {
+		t.Error("new key \"new\" was not admitted after eviction")
+	}
+}
+
+func TestProperty_EvictionAdmitsNewKeyUnderCapPressure(t *testing.T) {
+	t.Parallel()
+	rapid.Check(t, func(t *rapid.T) {
+		maxEntries := rapid.IntRange(1, 6).Draw(t, "maxEntries")
+		ipLimit := rapid.IntRange(1, 4).Draw(t, "ipLimit")
+		numKeys := rapid.IntRange(0, 30).Draw(t, "numKeys")
+
+		now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+		cfg := Config{
+			IPLimit:       ipLimit,
+			IPWindow:      time.Hour,
+			AcctLimit:     1000,
+			AcctWindow:    time.Hour,
+			PruneInterval: time.Hour,
+			MaxEntries:    maxEntries,
+		}
+		rl := NewRateLimiter(context.Background(), cfg)
+		defer rl.Stop()
+		rl.nowFunc = func() time.Time { return now }
+
+		// Each new key is filled to its limit under a deliberately small entry cap,
+		// forcing evictLeastRecentlyActive on every admission past the cap. The
+		// security contract: a new key is always admitted and retained, never
+		// silently dropped, so the key just filled is blocked immediately after.
+		// Dropping new keys when full (the pre-eviction behavior) lets an attacker
+		// pin the map so an untracked target fails open.
+		for i := range numKeys {
+			key := fmt.Sprintf("key-%d", i)
+			for range ipLimit {
+				rl.Record(key, "")
+			}
+			allowed, retryAfter := rl.Allow(key, "")
+			if allowed {
+				t.Fatalf("key %q allowed right after filling to limit (maxEntries=%d, ipLimit=%d): a new key must be admitted and retained", key, maxEntries, ipLimit)
+			}
+			if retryAfter <= 0 {
+				t.Fatalf("key %q blocked but retryAfter=%v, want > 0", key, retryAfter)
+			}
+			rl.muIP.Lock()
+			n := len(rl.ipWindows)
+			rl.muIP.Unlock()
+			if n > maxEntries {
+				t.Fatalf("ipWindows size %d exceeds MaxEntries %d", n, maxEntries)
+			}
+		}
+	})
+}
+
+// TestRateLimiter_empty_ip_skips_ip_tracking mirrors the empty-username guard:
+// an empty ip carries no per-client signal, so it must not create an IP window
+// (which would lump every unknown-IP caller into one shared bucket). The account
+// dimension still tracks when a username is supplied.
+func TestRateLimiter_empty_ip_skips_ip_tracking(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	rl := NewRateLimiter(context.Background(), DefaultConfig())
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	rl.Record("", "alice")
+
+	rl.muIP.Lock()
+	ipCount := len(rl.ipWindows)
+	rl.muIP.Unlock()
+
+	rl.muAcct.Lock()
+	acctCount := len(rl.acctWindows)
+	rl.muAcct.Unlock()
+
+	if ipCount != 0 {
+		t.Errorf("Record(\"\", user) IP windows = %d, want 0 (empty ip skips IP tracking)", ipCount)
+	}
+	if acctCount != 1 {
+		t.Errorf("Record(\"\", user) account windows = %d, want 1", acctCount)
+	}
+
+	if allowed, _ := rl.Allow("", "alice"); !allowed {
+		t.Error("Allow(\"\", user) = false after 1 attempt, want true (under account limit)")
+	}
+
+	// Reset with an empty ip must clear only the account dimension and not panic.
+	rl.Reset("", "alice")
+	rl.muAcct.Lock()
+	acctAfter := len(rl.acctWindows)
+	rl.muAcct.Unlock()
+	if acctAfter != 0 {
+		t.Errorf("Reset(\"\", user) account windows = %d, want 0", acctAfter)
+	}
+}
+
+func TestRateLimiter_empty_ip_account_dimension_still_blocks(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       1000,
+		IPWindow:      15 * time.Minute,
+		AcctLimit:     3,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    100,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	// An empty ip skips the IP dimension on every call, so only the account
+	// window for the username accumulates. Once it reaches AcctLimit, Allow
+	// must block on the account dimension alone even though no IP is tracked.
+	for range cfg.AcctLimit {
+		rl.Record("", "alice")
+	}
+
+	allowed, retryAfter := rl.Allow("", "alice")
+	if allowed {
+		t.Fatal("Allow with empty ip allowed after account limit reached, want blocked (account dimension must apply)")
+	}
+	if retryAfter <= 0 {
+		t.Errorf("retryAfter = %v, want > 0 when blocked", retryAfter)
+	}
+
+	rl.muIP.Lock()
+	ipCount := len(rl.ipWindows)
+	rl.muIP.Unlock()
+	if ipCount != 0 {
+		t.Errorf("ipWindows = %d, want 0 (empty ip must never create an IP window)", ipCount)
+	}
 }

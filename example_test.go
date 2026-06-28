@@ -54,11 +54,15 @@ func ExampleAuthenticator_RequireAuth() {
 		Enabled:  true,
 	})
 
-	_ = auth.NewAuthenticator(
+	authn, err := auth.NewAuthenticator(
 		store,
 		auth.WithIdleTimeout(1*time.Hour),
 		auth.WithAbsTimeout(24*time.Hour),
 	)
+	if err != nil {
+		panic(err)
+	}
+	_ = authn
 	fmt.Println("authenticator configured")
 	// Output: authenticator configured
 }

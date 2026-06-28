@@ -134,7 +134,7 @@ func TestAuthenticate_session_cookie_valid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/config", nil)
 	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
@@ -172,7 +172,7 @@ func TestAuthenticate_expired_session_falls_through(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
@@ -202,7 +202,7 @@ func TestAuthenticate_api_key_header(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/search", nil)
 	r.Header.Set("X-API-Key", plaintext)
 
@@ -217,7 +217,7 @@ func TestAuthenticate_api_key_header(t *testing.T) {
 
 func TestAuthenticate_no_credentials(t *testing.T) {
 	t.Parallel()
-	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	_, _, gotErr := a.Authenticate(r)
 	if !errors.Is(gotErr, ErrUnauthenticated) {
@@ -247,7 +247,7 @@ func TestAuthenticate_disabled_user_session(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
@@ -259,7 +259,7 @@ func TestAuthenticate_disabled_user_session(t *testing.T) {
 
 func TestRequireAuth_unauthenticated_browser_redirects(t *testing.T) {
 	t.Parallel()
-	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/config", nil)
 	r.Header.Set("Accept", "text/html")
 	w := httptest.NewRecorder()
@@ -275,7 +275,7 @@ func TestRequireAuth_unauthenticated_browser_redirects(t *testing.T) {
 
 func TestRequireAuth_unauthenticated_api_returns_401(t *testing.T) {
 	t.Parallel()
-	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/config", nil)
 	r.Header.Set("Accept", "application/json")
 	w := httptest.NewRecorder()
@@ -289,7 +289,7 @@ func TestRequireAuth_unauthenticated_api_returns_401(t *testing.T) {
 	}
 }
 
-func TestAuthenticate_api_key_query_param(t *testing.T) {
+func TestAuthenticate_api_key_query_param_rejected(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
 	ctx := context.Background()
@@ -309,21 +309,24 @@ func TestAuthenticate_api_key_query_param(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	// A valid key supplied only via the URL query parameter must NOT authenticate:
+	// keys are accepted via the X-Api-Key header only (CWE-598: a key in the query
+	// string leaks into access logs, browser history, and the Referer header).
 	r, _ := http.NewRequest(http.MethodGet, "/api/search?api_key="+plaintext, nil)
 
 	gotUser, _, gotErr := a.Authenticate(r)
-	if gotErr != nil {
-		t.Fatalf("Authenticate(api_key query) error = %v, want nil", gotErr)
+	if !errors.Is(gotErr, ErrUnauthenticated) {
+		t.Fatalf("Authenticate(api_key query) error = %v, want ErrUnauthenticated", gotErr)
 	}
-	if gotUser.ID != user.ID {
-		t.Errorf("Authenticate(api_key query) user ID = %d, want %d", gotUser.ID, user.ID)
+	if gotUser != nil {
+		t.Errorf("Authenticate(api_key query) user = %+v, want nil (query-param keys rejected)", gotUser)
 	}
 }
 
 func TestAuthenticate_invalid_api_key(t *testing.T) {
 	t.Parallel()
-	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-API-Key", "ak_invalid_key_value")
 
@@ -353,7 +356,7 @@ func TestAuthenticate_disabled_user_api_key(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-API-Key", plaintext)
 
@@ -383,7 +386,7 @@ func TestRequireAuth_authenticated_returns_user(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/search", nil)
 	r.Header.Set("X-API-Key", plaintext)
 	w := httptest.NewRecorder()
@@ -399,7 +402,7 @@ func TestRequireAuth_authenticated_returns_user(t *testing.T) {
 
 func TestAuthenticate_session_not_found_falls_through(t *testing.T) {
 	t.Parallel()
-	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: "nonexistent-session-token"})
 
@@ -429,7 +432,7 @@ func TestAuthenticate_stale_session_falls_through_to_api_key(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/search", nil)
 	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: "stale-session-token"})
 	r.Header.Set("X-API-Key", plaintext)
@@ -445,7 +448,7 @@ func TestAuthenticate_stale_session_falls_through_to_api_key(t *testing.T) {
 
 func TestAuthenticator_LoginPath_custom(t *testing.T) {
 	t.Parallel()
-	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour), WithLoginPath("/auth/signin"))
+	a := mustAuthenticator(t, newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour), WithLoginPath("/auth/signin"))
 	r, _ := http.NewRequest(http.MethodGet, "/protected", nil)
 	r.Header.Set("Accept", "text/html")
 	w := httptest.NewRecorder()
@@ -462,7 +465,7 @@ func TestAuthenticator_LoginPath_custom(t *testing.T) {
 
 func TestAuthenticator_LoginPath_default(t *testing.T) {
 	t.Parallel()
-	a := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	a := mustAuthenticator(t, newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/protected", nil)
 	r.Header.Set("Accept", "text/html")
 	w := httptest.NewRecorder()
@@ -483,26 +486,141 @@ func TestAuthenticator_Logger_used(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	db := newFakeSessionStore()
-	a := NewAuthenticator(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour), WithLogger(logger))
-
-	// Create a session with a valid token but for a non-existent user (user lookup returns nil).
 	ctx := context.Background()
-	_, hash, err := GenerateSessionToken()
+
+	// A disabled user with an otherwise-valid session makes the default
+	// session verifier emit a debug record; it must go to the injected logger.
+	user := &User{Username: "disabled", Role: RoleUser, Enabled: false}
+	if err := db.CreateUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	plaintext, hash, err := GenerateSessionToken()
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
 	if err := db.CreateSession(ctx, &Session{
-		TokenHash: hash, UserID: 9999, AuthMethod: "password",
+		TokenHash: hash, UserID: user.ID, AuthMethod: "password",
 		IPAddress: "127.0.0.1", CreatedAt: now, LastActivity: now,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	// The session verifier should use the injected logger (not slog.Default()).
-	sv := NewSessionVerifier(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour), WithLogger(logger))
-	_ = sv // Logger is threaded through Authenticator.verifiers()
-	if a.cfg.logger != logger {
-		t.Error("Logger not set on Authenticator")
+	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour), WithLogger(logger))
+	r, _ := http.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
+
+	if _, _, err := a.Authenticate(r); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("Authenticate(disabled user) error = %v, want ErrUnauthenticated", err)
+	}
+	if !strings.Contains(buf.String(), "disabled user attempted session auth") {
+		t.Errorf("injected logger captured no session-verifier log; got %q", buf.String())
+	}
+}
+
+func TestValidateRedirectURI_rejects_backslash_and_malformed(t *testing.T) {
+	t.Parallel()
+	// Backslash-bearing and malformed-escape URIs are open-redirect vectors
+	// (browsers fold "/\" to "//"); each must collapse to the safe root path.
+	for _, tt := range []struct {
+		name string
+		uri  string
+	}{
+		{"backslash prefix", "/\\evil.com"},
+		{"backslash in path", "/foo\\bar"},
+		{"backslash before slash", "/\\/evil.com"},
+		{"invalid percent-escape", "/%zz"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ValidateRedirectURI(tt.uri); got != "/" {
+				t.Errorf("ValidateRedirectURI(%q) = %q, want %q", tt.uri, got, "/")
+			}
+		})
+	}
+}
+
+func TestAuthenticate_bypass(t *testing.T) {
+	t.Parallel()
+	db := newFakeSessionStore()
+
+	on := mustAuthenticator(t, db, WithBypass(func() bool { return true }))
+	gotUser, _, err := on.Authenticate(httptest.NewRequest(http.MethodGet, "/", nil))
+	if err != nil {
+		t.Fatalf("Authenticate(bypass enabled) error = %v, want nil", err)
+	}
+	if gotUser == nil || gotUser.Role != RoleAdmin {
+		t.Fatalf("Authenticate(bypass enabled) = %+v, want a synthetic admin user", gotUser)
+	}
+
+	off := mustAuthenticator(t, db, WithBypass(func() bool { return false }))
+	if _, _, err := off.Authenticate(httptest.NewRequest(http.MethodGet, "/", nil)); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("Authenticate(bypass disabled, no credentials) error = %v, want ErrUnauthenticated", err)
+	}
+}
+
+func TestNewAuthenticator_bypass_logs_production_warning(t *testing.T) {
+	t.Parallel()
+
+	var withBypass strings.Builder
+	_ = mustAuthenticator(t, newFakeSessionStore(),
+		WithBypass(func() bool { return true }),
+		WithLogger(slog.New(slog.NewTextHandler(&withBypass, nil))),
+	)
+	if got := withBypass.String(); !strings.Contains(got, "authentication bypass is configured") || !strings.Contains(got, "level=WARN") {
+		t.Errorf("WithBypass did not emit the WARN production-safety warning; log = %q", got)
+	}
+
+	var noBypass strings.Builder
+	_ = mustAuthenticator(t, newFakeSessionStore(),
+		WithLogger(slog.New(slog.NewTextHandler(&noBypass, nil))),
+	)
+	if got := noBypass.String(); strings.Contains(got, "authentication bypass is configured") {
+		t.Errorf("Authenticator without WithBypass emitted the bypass warning; log = %q", got)
+	}
+}
+
+func TestHasRole_nilUser_failsClosed(t *testing.T) {
+	t.Parallel()
+	// A nil principal must fail closed (false), never panic: HasRole guards an
+	// authorization decision and a nil user means "not authenticated".
+	if HasRole(nil, RoleUser) {
+		t.Error("HasRole(nil, RoleUser) = true, want false (fail closed)")
+	}
+	if HasRole(nil, RoleAdmin) {
+		t.Error("HasRole(nil, RoleAdmin) = true, want false (fail closed)")
+	}
+}
+
+// errVerifier is a CredentialVerifier that always returns a backend error,
+// exercising the non-ErrUnauthenticated error path of Authenticate/RequireAuth.
+type errVerifier struct{ err error }
+
+func (e errVerifier) Verify(context.Context, *http.Request) (*User, string, error) {
+	return nil, "", e.err
+}
+
+func TestAuthenticator_injectedVerifierError_failsClosed(t *testing.T) {
+	t.Parallel()
+	// A verifier that returns a backend error must fail closed: Authenticate
+	// propagates the error (not ErrUnauthenticated) and RequireAuth denies the
+	// request (ok=false, 401) rather than treating the error as success.
+	wantErr := errors.New("backend down")
+	a := mustAuthenticator(t, newFakeSessionStore(), WithVerifiers([]CredentialVerifier{
+		errVerifier{err: wantErr},
+	}))
+
+	if _, _, err := a.Authenticate(httptest.NewRequest(http.MethodGet, "/api/x", nil)); !errors.Is(err, wantErr) {
+		t.Fatalf("Authenticate() error = %v, want %v", err, wantErr)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/api/x", nil)
+	r.Header.Set("Accept", "application/json")
+	w := httptest.NewRecorder()
+	if _, _, ok := a.RequireAuth(w, r); ok {
+		t.Fatal("RequireAuth() ok = true on verifier error, want false (fail closed)")
+	}
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("RequireAuth() status = %d, want %d", w.Code, http.StatusUnauthorized)
 	}
 }

@@ -1,0 +1,62 @@
+package auth
+
+import (
+	"testing"
+	"time"
+)
+
+// mustSessionVerifier builds a SessionVerifier and fails the test if the
+// configuration is rejected. Use it for the common case of a valid config;
+// tests that exercise a rejected config call NewSessionVerifier directly and
+// assert on the error. It takes testing.TB so benchmarks can use it too.
+func mustSessionVerifier(tb testing.TB, store SessionVerifierStore, opts ...Option) *SessionVerifier {
+	tb.Helper()
+	v, err := NewSessionVerifier(store, opts...)
+	if err != nil {
+		tb.Fatalf("NewSessionVerifier: %v", err)
+	}
+	return v
+}
+
+// mustAuthenticator builds an Authenticator and fails the test if the
+// configuration is rejected. See [mustSessionVerifier].
+func mustAuthenticator(tb testing.TB, store AuthStore, opts ...Option) *Authenticator {
+	tb.Helper()
+	a, err := NewAuthenticator(store, opts...)
+	if err != nil {
+		tb.Fatalf("NewAuthenticator: %v", err)
+	}
+	return a
+}
+
+func TestNewSessionVerifier_rejects_invalid_cookie_config(t *testing.T) {
+	t.Parallel()
+	// The default (__Host-) posture with a non-root Path produces a cookie
+	// browsers reject; construction must fail fast rather than warn.
+	if _, err := NewSessionVerifier(newFakeSessionStore(), WithCookie(CookieConfig{Path: "/app"})); err == nil {
+		t.Fatal("NewSessionVerifier(__Host- posture + non-root Path) error = nil, want non-nil")
+	}
+}
+
+func TestNewSessionVerifier_rejects_throttle_not_less_than_idle(t *testing.T) {
+	t.Parallel()
+	if _, err := NewSessionVerifier(newFakeSessionStore(),
+		WithIdleTimeout(time.Hour), WithActivityThrottle(time.Hour)); err == nil {
+		t.Fatal("NewSessionVerifier(throttle == idle) error = nil, want non-nil")
+	}
+}
+
+func TestNewAuthenticator_rejects_invalid_cookie_config(t *testing.T) {
+	t.Parallel()
+	// A __Host- posture with a Domain is rejected by browsers; fail fast.
+	if _, err := NewAuthenticator(newFakeSessionStore(), WithCookie(CookieConfig{Domain: "example.com"})); err == nil {
+		t.Fatal("NewAuthenticator(__Host- posture + Domain) error = nil, want non-nil")
+	}
+}
+
+func TestNewAuthenticator_accepts_default_config(t *testing.T) {
+	t.Parallel()
+	if _, err := NewAuthenticator(newFakeSessionStore()); err != nil {
+		t.Fatalf("NewAuthenticator(defaults) error = %v, want nil", err)
+	}
+}

@@ -24,9 +24,13 @@ type SessionVerifier struct {
 	activityMu   sync.Mutex
 }
 
-// NewSessionVerifier creates a SessionVerifier with the given session store and options.
-// If no idle/absolute timeout is provided, defaults of 1h and 24h are applied.
-func NewSessionVerifier(store SessionVerifierStore, opts ...Option) *SessionVerifier {
+// NewSessionVerifier creates a SessionVerifier with the given session store and
+// options. It returns an error when the assembled configuration is unusable:
+// for example a __Host- cookie posture combined with a Domain or a non-root
+// Path (which browsers reject), or an activity throttle that is not less than
+// the idle timeout. See [CookieConfig.Validate]. If no idle/absolute timeout is
+// provided, defaults of 1h and 24h are applied.
+func NewSessionVerifier(store SessionVerifierStore, opts ...Option) (*SessionVerifier, error) {
 	cfg := authConfig{}
 	for _, o := range opts {
 		if o != nil {
@@ -34,11 +38,14 @@ func NewSessionVerifier(store SessionVerifierStore, opts ...Option) *SessionVeri
 		}
 	}
 	cfg.defaults()
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
 	return &SessionVerifier{
 		store:        store,
 		cfg:          cfg,
 		lastActivity: make(map[string]time.Time),
-	}
+	}, nil
 }
 
 // logger returns the configured logger or slog.Default().
@@ -58,14 +65,15 @@ func (v *SessionVerifier) Verify(ctx context.Context, r *http.Request) (*User, s
 	hash := SessionHash(token)
 	sess, err := v.store.GetSessionByHash(ctx, hash)
 	if err != nil {
-		v.logger().Debug("auth: session lookup failed", "error", err)
+		v.logger().Warn("auth: session lookup failed", "error", err)
 		return nil, "", nil
 	}
 	if sess == nil {
 		return nil, "", nil
 	}
 	now := time.Now()
-	if ValidateSession(sess, v.cfg.idleTimeout, v.cfg.absTimeout, now) != nil {
+	if verr := ValidateSession(sess, v.cfg.idleTimeout, v.cfg.absTimeout, now); verr != nil {
+		v.logger().Debug("auth: session rejected", "user_id", sess.UserID, "reason", verr)
 		return nil, "", nil
 	}
 	if v.shouldWriteActivity(hash, now) {
@@ -75,7 +83,7 @@ func (v *SessionVerifier) Verify(ctx context.Context, r *http.Request) (*User, s
 	}
 	user, err := v.store.GetUserByID(ctx, sess.UserID)
 	if err != nil {
-		v.logger().Debug("auth: user lookup failed", "user_id", sess.UserID, "error", err)
+		v.logger().Warn("auth: user lookup failed", "user_id", sess.UserID, "error", err)
 		return nil, "", nil
 	}
 	if user == nil || !user.Enabled {
