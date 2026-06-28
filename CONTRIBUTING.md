@@ -45,14 +45,14 @@ importable.
 | Path                       | Purpose                                                                                                                                                                     |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `github.com/cplieger/auth` | Passwords, sessions, tokens, cookies, API keys, WebAuthn/OIDC entry points, middleware/guards (`Authenticator`, `SessionVerifier`, `APIKeyVerifier`, `CredentialVerifier`). |
-| `auth/store`               | Composite `AuthStore` interface (user/session/passkey/key/OIDC-state) for the consumer's persistence layer.                                                                 |
+| `auth/store`               | `store.Composite` interface (user/session/passkey/key/OIDC-state) for the consumer's persistence layer.                                                                     |
 | `auth/ratelimit`           | Dual sliding-window per-IP + per-account brute-force limiter (OWASP ASVS 2.2.1). Stdlib-only.                                                                               |
 | `auth/oidc`                | OIDC provider config validation and helpers.                                                                                                                                |
 | `auth/webauthn`            | WebAuthn/FIDO2 helpers (e.g. AAGUID formatting).                                                                                                                            |
 | `auth/authtest`            | Exported in-memory `SessionStore`/`AuthStore` (`NewMemStore`, `AddUser`) for consumer tests. Not for production.                                                            |
 
 Storage is injected by the consumer: the library defines interfaces
-(`SessionStore`, `store.AuthStore`, `CredentialVerifier`) and never
+(`SessionStore`, `store.Composite`, `CredentialVerifier`) and never
 ships a concrete persistence implementation. Configuration is via
 functional options only — no env reads, no global init, no import-time
 side effects.
