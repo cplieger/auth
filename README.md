@@ -28,6 +28,7 @@ go get github.com/cplieger/auth@latest
 package main
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -51,14 +52,19 @@ func main() {
 	ok2, _ := hasher.Verify("my-secure-password", hash2)
 	_, _ = hash2, ok2
 
-	// Set up authenticator with your store implementation (functional options)
-	authenticator := auth.NewAuthenticator(
+	// Set up authenticator with your store implementation (functional options).
+	// NewAuthenticator returns an error if the configuration is unusable (e.g. a
+	// __Host- cookie posture combined with a Domain or a non-root Path).
+	authenticator, err := auth.NewAuthenticator(
 		myStore, // implements auth.SessionStore
 		auth.WithIdleTimeout(1*time.Hour),
 		auth.WithAbsTimeout(24*time.Hour),
 		auth.WithLoginPath("/login"),
 		auth.WithCookie(auth.DefaultCookieConfig()),
 	)
+	if err != nil {
+		log.Fatalf("auth: %v", err)
+	}
 
 	// Use in HTTP handler
 	http.HandleFunc("/api/protected", func(w http.ResponseWriter, r *http.Request) {
@@ -77,12 +83,12 @@ All configuration is via functional options and function parameters — no impor
 
 - `WithLogger(l)`: optional `*slog.Logger`; if nil, uses `slog.Default()`
 - `WithLoginPath(path)`: redirect path for unauthenticated browser requests (default: `"/login"`)
-- `WithCookie(cfg)`: configurable cookie name/prefix, Path, SameSite, Domain, Secure (see `CookieConfig`)
+- `WithCookie(cfg)`: configurable cookie Name, Posture, Path, SameSite, Domain, TrustForwardedHeaders (see `CookieConfig`)
 - `WithIdleTimeout(d)`: session idle timeout (default: 1h)
 - `WithAbsTimeout(d)`: session absolute timeout (default: 24h)
 - `WithBypass(fn)`: bypass function for development (synthetic admin user)
 - `WithVerifiers(vs []CredentialVerifier)`: override the default verifier chain. When set, `Authenticate` iterates the supplied chain instead of the hardcoded default (`SessionVerifier` + `APIKeyVerifier`).
-- `WithActivityThrottle(d time.Duration)`: when `d>0`, `SessionVerifier` maintains a per-hash last-write map and calls `UpdateSessionActivity` at most once per `d` per hash. `d==0` (default) preserves the current write-on-every-request behavior.
+- `WithActivityThrottle(d time.Duration)`: when `d>0`, `SessionVerifier` maintains a per-hash last-write map and calls `UpdateSessionActivity` at most once per `d` per hash. `d==0` (default) preserves the current write-on-every-request behavior. `d` must be less than the idle timeout, or construction returns an error (the persisted last-activity lags by up to `d`, so a throttle at or above the idle timeout would expire active sessions).
 - `NewHasher(params, ...HasherOption)`: configurable Argon2id parameters; use `WithPepper([]byte)` for HMAC peppering
 - `GenerateAPIKey(prefix)`: pass your key prefix (e.g. `"ak_"`)
 - `ValidatePasswordContext(password, username, forbiddenWords)`: pass app-specific forbidden words
@@ -91,14 +97,17 @@ All configuration is via functional options and function parameters — no impor
 
 ```go
 cfg := auth.CookieConfig{
-    Name:     "my_session",       // base name (default: "auth_session")
-    Prefix:   "__Host-",          // HTTPS prefix (default: "__Host-"; "" to disable)
-    Path:     "/",                // cookie path (default: "/")
-    Domain:   "",                 // cookie domain (default: unset)
-    SameSite: http.SameSiteLaxMode, // (default: Lax)
-    Secure:   nil,                // nil=auto (true when HTTPS), or explicit *bool
+    Name:     "my_session",          // base name (default: "auth_session")
+    Posture:  auth.PostureSecure,    // __Host- + Secure (default); see CookiePosture table below
+    Path:     "/",                   // cookie path (default: "/")
+    Domain:   "",                    // cookie domain (default: unset; must stay unset under a __Host- posture)
+    SameSite: http.SameSiteLaxMode,  // (default: Lax)
+    // TrustForwardedHeaders: true,  // only behind a proxy that always sets X-Forwarded-Proto
 }
-authenticator := auth.NewAuthenticator(myStore, auth.WithCookie(cfg))
+authenticator, err := auth.NewAuthenticator(myStore, auth.WithCookie(cfg))
+if err != nil {
+    log.Fatalf("auth: %v", err) // cfg rejected: see CookieConfig.Validate
+}
 ```
 
 #### CookiePosture
@@ -158,23 +167,28 @@ authenticator := auth.NewAuthenticator(myStore, auth.WithCookie(cfg))
 
 ### WebAuthn
 
-- `NewWebAuthn(rpID, rpDisplayName, rpOrigins) (*webauthn.WebAuthn, error)` — WebAuthn setup
-- `NewWebAuthnUser(user, creds) (*WebAuthnUser, error)` — adapt User to webauthn.User interface
-- `BeginRegistration / FinishRegistration / BeginLogin / FinishLogin` — WebAuthn ceremonies
-- `BeginConditionalLogin(wa) (*CredentialAssertion, *SessionData, error)` — conditional mediation (autofill UI)
+All in the `github.com/cplieger/auth/webauthn` subpackage:
+
+- `webauthn.NewWebAuthn(rpID, rpDisplayName, rpOrigins) (*webauthn.WebAuthn, error)` — WebAuthn setup (enforced 5-minute ceremony timeout)
+- `webauthn.NewWebAuthnUser(user, creds) (*webauthn.User, error)` — adapt `auth.User` + credentials to the go-webauthn `User` interface
+- `webauthn.BeginRegistration / FinishRegistration / BeginLogin / FinishLogin` — WebAuthn ceremonies
+- `webauthn.BeginConditionalLogin(wa) (*protocol.CredentialAssertion, *webauthn.SessionData, error)` — conditional mediation (autofill UI)
 
 ### OIDC
 
-- `NewOIDCProvider(ctx, cfg) (*OIDCProvider, error)` — OIDC provider with PKCE
-- `ValidateOIDCConfig(cfg) error` — validate OIDC configuration
-- `GenerateOIDCState() (string, error)` — random state parameter
-- `GeneratePKCE() (verifier, challenge, error)` — PKCE S256
+- `oidc.NewProvider(ctx, cfg) (*oidc.Provider, error)` — OIDC provider with PKCE (cfg is `oidc.Config`)
+- `oidc.ValidateConfig(cfg) error` — validate OIDC configuration
+- `oidc.GenerateState() (string, error)` — random state parameter
+- `oidc.GeneratePKCE() (verifier, challenge, error)` — PKCE S256
+- `provider.AuthorizationURL(state, nonce, codeChallenge) string` — build the authorization redirect URL (binds the nonce and the PKCE S256 challenge)
+- `provider.Exchange(ctx, code, codeVerifier, nonce) (*oidc.Claims, *time.Time, error)` — exchange the auth code and verify the ID token; `nonce` must be the non-empty value bound into `AuthorizationURL` (an empty nonce is rejected with `ErrOIDCNonceMismatch`, fail-closed)
+- `oidc.ResolveUser(claims, existingBySub) (user *auth.User, isNew bool, err error)` — map an OIDC identity by `(issuer, sub)` to a user; for a new identity it provisions from the claims and returns `ErrOIDCNoUsername` when the token carries neither `preferred_username` nor `email`
 
 ### Auth Middleware
 
-- `NewAuthenticator(store, ...Option) *Authenticator` — create authenticator with functional options
-- `NewSessionVerifier(store, ...Option) *SessionVerifier` — session-cookie credential verifier
-- `NewAPIKeyVerifier(store, ...Option) *APIKeyVerifier` — API-key credential verifier
+- `NewAuthenticator(store, ...Option) (*Authenticator, error)` — create authenticator with functional options; errors on an unusable config (see `CookieConfig.Validate`)
+- `NewSessionVerifier(store, ...Option) (*SessionVerifier, error)` — session-cookie credential verifier; errors on an unusable config
+- `NewAPIKeyVerifier(store, ...Option) *APIKeyVerifier` — API-key credential verifier (reads the `X-Api-Key` header only, never a URL query parameter — CWE-598)
 - `Authenticator.Authenticate(r) (*User, string, error)` — resolve request to user
 - `Authenticator.RequireAuth(w, r) (*User, string, bool)` — auth guard
 - `HasRole(user, role) bool` — RBAC check
@@ -184,7 +198,7 @@ authenticator := auth.NewAuthenticator(myStore, auth.WithCookie(cfg))
 - `WithVerifiers(vs []CredentialVerifier)` — override the default verifier chain
 - `WithActivityThrottle(d time.Duration)` — throttle `UpdateSessionActivity` writes (see Configuration)
 - `CredentialVerifier` — interface for pluggable credential verifiers
-- `SessionStore` / `WebAuthnStore` — interfaces for consumer to implement
+- `SessionStore` / `webauthn.Store` (subpackage `github.com/cplieger/auth/webauthn`) — interfaces for consumer to implement
 - `store.Composite` — composite interface (subpackage `github.com/cplieger/auth/store`)
 
 ## Subpackages
@@ -195,7 +209,7 @@ Composite interface `store.Composite` (renamed from `store.AuthStore` to disambi
 
 ### `auth/ratelimit`
 
-Dual sliding-window per-IP + per-account authentication brute-force rate limiter (OWASP ASVS 2.2.1). Standard library only (`context`, `sync`, `time`).
+Dual sliding-window per-IP + per-account authentication brute-force rate limiter (OWASP ASVS 2.2.1). Standard library only (`context`, `log/slog`, `sync`, `time`).
 
 ```go
 rl := ratelimit.NewRateLimiter(ctx, ratelimit.DefaultConfig())
@@ -203,6 +217,8 @@ defer rl.Stop()
 if allowed, retryAfter := rl.Allow(clientIP, username); !allowed {
     // reject; retry after retryAfter
 }
+// On each FAILED login attempt, record it so it counts toward the limit:
+rl.Record(clientIP, username)
 // On successful login, clear the failure counters:
 rl.Reset(clientIP, username)
 ```
