@@ -82,7 +82,7 @@ func TestSessionVerifier_Verify_successfulActivityUpdate_logsNoWarning(t *testin
 	// activity-update warning.
 	h := &recordingHandler{}
 	store, plaintext := newVerifierSession(t, true)
-	v := NewSessionVerifier(store, WithLogger(slog.New(h)), WithCookie(DefaultCookieConfig()))
+	v := mustSessionVerifier(t, store, WithLogger(slog.New(h)), WithCookie(DefaultCookieConfig()))
 
 	gotUser, _, err := v.Verify(context.Background(), newVerifierRequest(t, plaintext))
 	if err != nil || gotUser == nil {
@@ -100,7 +100,7 @@ func TestSessionVerifier_Verify_disabledUser_refusesAndLogs(t *testing.T) {
 	// attempt must be logged at debug level.
 	h := &recordingHandler{}
 	store, plaintext := newVerifierSession(t, false)
-	v := NewSessionVerifier(store, WithLogger(slog.New(h)), WithCookie(DefaultCookieConfig()))
+	v := mustSessionVerifier(t, store, WithLogger(slog.New(h)), WithCookie(DefaultCookieConfig()))
 
 	gotUser, _, err := v.Verify(context.Background(), newVerifierRequest(t, plaintext))
 	if err != nil {
@@ -142,12 +142,12 @@ func TestSessionVerifier_Verify_idleTimeoutOption_expiresOldSession(t *testing.T
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: "s", Value: plain})
 
-	expired := NewSessionVerifier(store, WithCookie(cfg), WithIdleTimeout(time.Hour))
+	expired := mustSessionVerifier(t, store, WithCookie(cfg), WithIdleTimeout(time.Hour))
 	if u, _, _ := expired.Verify(ctx, r); u != nil {
 		t.Fatal("Verify() with 1h idle timeout authenticated a 2h-idle session, want nil")
 	}
 
-	valid := NewSessionVerifier(store, WithCookie(cfg), WithIdleTimeout(3*time.Hour))
+	valid := mustSessionVerifier(t, store, WithCookie(cfg), WithIdleTimeout(3*time.Hour))
 	if u, _, _ := valid.Verify(ctx, r); u == nil {
 		t.Fatal("Verify() with 3h idle timeout refused a 2h-idle session, want a user")
 	}
@@ -287,7 +287,7 @@ func TestSessionVerifier_updates_activity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	v := NewSessionVerifier(db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	v := mustSessionVerifier(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
@@ -306,5 +306,99 @@ func TestSessionVerifier_updates_activity(t *testing.T) {
 	}
 	if time.Since(sess.LastActivity) > 5*time.Second {
 		t.Errorf("LastActivity not recent: %v", sess.LastActivity)
+	}
+}
+
+// failingSessionStore injects a configurable backend error from each store
+// method so the verifier's fail-closed behavior can be exercised.
+type failingSessionStore struct {
+	sess    *Session
+	user    *User
+	sessErr error
+	userErr error
+}
+
+func (s *failingSessionStore) GetSessionByHash(context.Context, string) (*Session, error) {
+	return s.sess, s.sessErr
+}
+
+func (s *failingSessionStore) GetUserByID(context.Context, int64) (*User, error) {
+	return s.user, s.userErr
+}
+
+func (s *failingSessionStore) UpdateSessionActivity(context.Context, string, time.Time) error {
+	return nil
+}
+
+func TestSessionVerifier_Verify_storeError_failsClosed(t *testing.T) {
+	t.Parallel()
+	// A backend error from the session or user lookup must fail closed: the
+	// verifier denies authentication (nil user) and never propagates the error
+	// to the caller, so a transient DB fault can neither authenticate a request
+	// nor leak through Authenticate.
+	now := time.Now()
+	liveSession := &Session{TokenHash: "h", UserID: 1, CreatedAt: now, LastActivity: now}
+	for _, tc := range []struct {
+		name  string
+		store *failingSessionStore
+	}{
+		{"session lookup error", &failingSessionStore{sessErr: context.DeadlineExceeded}},
+		{"user lookup error", &failingSessionStore{sess: liveSession, userErr: context.DeadlineExceeded}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := DefaultCookieConfig()
+			v := mustSessionVerifier(t, tc.store, WithCookie(cfg))
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.AddCookie(&http.Cookie{Name: cfg.EffectiveName(), Value: "token"})
+			user, hash, err := v.Verify(context.Background(), r)
+			if user != nil || hash != "" || err != nil {
+				t.Errorf("Verify() on store error = (%v, %q, %v), want (nil, empty, nil) fail-closed", user, hash, err)
+			}
+		})
+	}
+}
+
+// activityErrStore serves a live session and enabled user but fails the
+// activity-write, exercising Verify's best-effort activity-update path.
+type activityErrStore struct {
+	sess *Session
+	user *User
+}
+
+func (s activityErrStore) GetSessionByHash(context.Context, string) (*Session, error) {
+	return s.sess, nil
+}
+
+func (s activityErrStore) GetUserByID(context.Context, int64) (*User, error) {
+	return s.user, nil
+}
+
+func (s activityErrStore) UpdateSessionActivity(context.Context, string, time.Time) error {
+	return context.DeadlineExceeded
+}
+
+func TestSessionVerifier_Verify_activityUpdateError_stillAuthenticates(t *testing.T) {
+	t.Parallel()
+	// The session-activity write is best-effort: a backend error updating
+	// activity must NOT deny an otherwise-valid session. Verify still returns
+	// the user and logs exactly one warning.
+	now := time.Now()
+	store := activityErrStore{
+		sess: &Session{TokenHash: "h", UserID: 1, CreatedAt: now, LastActivity: now},
+		user: &User{ID: 1, Username: "alice", Role: RoleUser, Enabled: true},
+	}
+	h := &recordingHandler{}
+	cfg := DefaultCookieConfig()
+	v := mustSessionVerifier(t, store, WithCookie(cfg), WithLogger(slog.New(h)))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&http.Cookie{Name: cfg.EffectiveName(), Value: "token"})
+
+	user, _, err := v.Verify(context.Background(), r)
+	if err != nil || user == nil {
+		t.Fatalf("Verify() = (%v, %v), want a user and nil error despite the activity-write failure", user, err)
+	}
+	if n := h.countMsg("session activity update failed"); n != 1 {
+		t.Errorf("Verify() logged %d activity-update warnings, want 1", n)
 	}
 }

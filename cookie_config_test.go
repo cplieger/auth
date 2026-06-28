@@ -257,3 +257,25 @@ func TestCookieConfig_SetCookie_alwaysHttpOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestCookiePosture_String(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		posture CookiePosture
+		want    string
+	}{
+		{PostureSecure, "PostureSecure"},
+		{PostureInsecureLAN, "PostureInsecureLAN"},
+		{PostureForceSecure, "PostureForceSecure"},
+		{PosturePerRequest, "PosturePerRequest"},
+		{CookiePosture(99), "CookiePosture(99)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.want, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.posture.String(); got != tc.want {
+				t.Errorf("CookiePosture(%d).String() = %q, want %q", int(tc.posture), got, tc.want)
+			}
+		})
+	}
+}

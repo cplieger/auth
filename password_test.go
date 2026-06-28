@@ -169,3 +169,28 @@ func TestValidatePasswordLength_exactlyMax_accepted(t *testing.T) {
 		t.Errorf("ValidatePasswordLength(len=%d, false) = %v, want nil", PasswordMaxLength, err)
 	}
 }
+
+func TestDummyHash_isVerifiableCurrentParamsHash(t *testing.T) {
+	t.Parallel()
+	// DummyHash exists so the login handler can run a real verification for
+	// unknown users and avoid a user-enumeration timing oracle (H2). The
+	// returned value must therefore be a well-formed, current-parameter
+	// Argon2id hash that VerifyPassword can process without error.
+	h := DummyHash()
+	if h == "" {
+		t.Fatal("DummyHash() = empty string, want a PHC Argon2id hash")
+	}
+	ok, err := VerifyPassword("not-the-dummy-password", h)
+	if err != nil {
+		t.Errorf("VerifyPassword(_, DummyHash()) error = %v, want nil (hash must be parseable)", err)
+	}
+	if ok {
+		t.Error("VerifyPassword(arbitrary, DummyHash()) = true, want false")
+	}
+	if NeedsRehash(h) {
+		t.Error("NeedsRehash(DummyHash()) = true, want false (dummy must use current OWASP params)")
+	}
+	if h2 := DummyHash(); h2 != h {
+		t.Error("DummyHash() returned different values across calls, want a stable cached hash")
+	}
+}

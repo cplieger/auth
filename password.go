@@ -6,8 +6,6 @@
 package auth
 
 import (
-	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -26,54 +24,44 @@ const (
 	argonKeyLen      = 32
 )
 
+// dummyHash lazily computes the timing-equalization hash exactly once.
+var dummyHash = sync.OnceValue(func() string {
+	h, err := HashPassword("dummy-init-password")
+	if err != nil {
+		panic("auth: failed to generate dummy hash: " + err.Error())
+	}
+	return h
+})
+
 // DummyHash returns a pre-computed Argon2id hash used by the login handler
 // to equalize timing when the username doesn't exist (H2 mitigation).
-// The hash is computed lazily on first call via sync.Once.
+// The hash is computed lazily on first call.
 func DummyHash() string {
-	dummyHashOnce.Do(func() {
-		h, err := HashPassword("dummy-init-password")
-		if err != nil {
-			panic("auth: failed to generate dummy hash: " + err.Error())
-		}
-		dummyHashVal = h
-	})
-	return dummyHashVal
+	return dummyHash()
 }
 
-var (
-	dummyHashOnce sync.Once
-	dummyHashVal  string
-)
+// defaultHasher is the package default Hasher (OWASP params, no pepper) shared
+// by HashPassword/VerifyPassword/NeedsRehash so the Argon2id/PHC implementation
+// lives only in Hasher and is never duplicated. Built once on first use.
+var defaultHasher = sync.OnceValue(func() *Hasher {
+	h, err := NewHasher(DefaultArgon2Params())
+	if err != nil {
+		panic("auth: default Argon2 params invalid: " + err.Error())
+	}
+	return h
+})
 
 // HashPassword hashes a password using Argon2id with OWASP parameters.
 // Returns the hash in PHC string format:
 // $argon2id$v=19$m=19456,t=2,p=1$<base64-salt>$<base64-hash>
 func HashPassword(password string) (string, error) {
-	salt := make([]byte, argonSaltLen)
-	if _, err := rand.Read(salt); err != nil {
-		return "", fmt.Errorf("auth: generate salt: %w", err)
-	}
-
-	key := argon2.IDKey([]byte(password), salt, argonIterations, argonMemory, argonParallelism, argonKeyLen)
-
-	b64Salt := base64.RawStdEncoding.EncodeToString(salt)
-	b64Key := base64.RawStdEncoding.EncodeToString(key)
-
-	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
-		argon2.Version, argonMemory, argonIterations, argonParallelism,
-		b64Salt, b64Key), nil
+	return defaultHasher().Hash(password)
 }
 
 // VerifyPassword verifies a password against an encoded Argon2id hash
 // in PHC string format. Uses constant-time comparison.
 func VerifyPassword(password, encodedHash string) (bool, error) {
-	p, err := parsePHC(encodedHash)
-	if err != nil {
-		return false, err
-	}
-
-	derived := argon2.IDKey([]byte(password), p.salt, p.iterations, p.memory, p.parallelism, p.keyLen)
-	return subtle.ConstantTimeCompare(p.key, derived) == 1, nil
+	return defaultHasher().Verify(password, encodedHash)
 }
 
 // phcParams holds the parsed parameters from a PHC-format Argon2id hash string.
@@ -88,12 +76,7 @@ type phcParams struct {
 // different from the current OWASP-recommended defaults. Returns true if the
 // hash is invalid or uses outdated parameters.
 func NeedsRehash(encodedHash string) bool {
-	p, err := parsePHC(encodedHash)
-	if err != nil {
-		return true
-	}
-	return p.memory != argonMemory || p.iterations != argonIterations ||
-		p.parallelism != argonParallelism || p.keyLen != argonKeyLen
+	return defaultHasher().NeedsRehash(encodedHash)
 }
 
 // parsePHC extracts parameters from a PHC-format Argon2id hash string.

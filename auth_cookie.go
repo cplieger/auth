@@ -17,11 +17,6 @@ func IsBrowserRequest(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
-// isHTTPS returns true if the request arrived over HTTPS using the default config.
-func isHTTPS(r *http.Request) bool {
-	return defaultCookieConfig.isHTTPS(r)
-}
-
 // SessionCookieName returns the stable cookie name using the default CookieConfig.
 func SessionCookieName(_ *http.Request) string {
 	return defaultCookieConfig.EffectiveName()

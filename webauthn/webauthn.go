@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -118,31 +119,64 @@ func formatAAGUID(aaguid []byte) string {
 		aaguid[0:4], aaguid[4:6], aaguid[6:8], aaguid[8:10], aaguid[10:16])
 }
 
-// PasskeyFriendlyName returns a human-friendly name for a passkey based on
-// its AAGUID.
+// nameSuffix reports whether name is a label PasskeyFriendlyName derives from
+// base -- the bare base (which counts as suffix 1) or "base N" for a positive
+// integer N -- and returns that suffix. ok is false for any other name,
+// including one like "YubiKey 5 NFC" that merely shares a "base "-prefixed
+// string with a different known base ("YubiKey 5"). nextNameSuffix routes
+// through this helper so the suffix classification lives in exactly one place.
+func nameSuffix(name, base string) (suffix int, ok bool) {
+	if name == base {
+		return 1, true
+	}
+	if rest, found := strings.CutPrefix(name, base+" "); found {
+		if n, err := strconv.Atoi(rest); err == nil && n >= 1 {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+// nextNameSuffix returns one past the highest numeric suffix already in use
+// among names derived from base: a name equal to base counts as suffix 1 (the
+// bare form) and a name "base N" for a positive integer N counts as N. The
+// result is 1 when no name matches. Deriving the suffix from the maximum in use
+// -- rather than from a count of matches -- keeps generated names unique after
+// a non-tail deletion leaves a numbering gap: deleting "Passkey 1" from
+// ["Passkey 1", "Passkey 2"] still yields "Passkey 3", not a duplicate
+// "Passkey 2".
+func nextNameSuffix(existingNames []string, base string) int {
+	highest := 0
+	for _, name := range existingNames {
+		if n, ok := nameSuffix(name, base); ok {
+			highest = max(highest, n)
+		}
+	}
+	return highest + 1
+}
+
+// PasskeyFriendlyName returns a display-only, human-friendly label for a
+// newly registered passkey, chosen so it does not duplicate any entry in
+// existingNames (the user's current passkey labels). A known authenticator
+// (matched by AAGUID) gets its bare registry name for the first of its kind
+// (e.g. "Chrome on Mac") and a numbered name for each subsequent one
+// ("Chrome on Mac 2", ...); an unknown authenticator is always numbered
+// ("Passkey 1", "Passkey 2", ...). The numeric suffix is one past the
+// highest already in use, so deleting a passkey that leaves a numbering gap
+// never yields a duplicate label.
 func PasskeyFriendlyName(aaguid []byte, existingNames []string) string {
 	uuid := formatAAGUID(aaguid)
 	baseName, known := knownAAGUIDMap[uuid]
 	if !known {
-		n := 1
-		for _, name := range existingNames {
-			if name == "Passkey" || strings.HasPrefix(name, "Passkey ") {
-				n++
-			}
-		}
-		return fmt.Sprintf("Passkey %d", n)
+		return fmt.Sprintf("Passkey %d", nextNameSuffix(existingNames, "Passkey"))
 	}
-
-	count := 0
-	for _, name := range existingNames {
-		if name == baseName || strings.HasPrefix(name, baseName+" ") {
-			count++
-		}
-	}
-	if count == 0 {
+	// nextNameSuffix returns 1 only when no derived name exists yet, so a
+	// suffix of 1 marks the first of its kind and earns the bare base name.
+	suffix := nextNameSuffix(existingNames, baseName)
+	if suffix == 1 {
 		return baseName
 	}
-	return fmt.Sprintf("%s %d", baseName, count+1)
+	return fmt.Sprintf("%s %d", baseName, suffix)
 }
 
 // APICredentialToWebAuthn converts a PasskeyCredential to a webauthn.Credential.
@@ -175,6 +209,7 @@ func APICredentialToWebAuthn(c *auth.PasskeyCredential) webauthn.Credential {
 	if len(c.RawAttestation) > 0 {
 		if err := json.Unmarshal(c.RawAttestation, &cred.Attestation); err != nil {
 			slog.Warn("webauthn: corrupted attestation data, skipping MDS verification",
+				"user_id", c.UserID,
 				"credential_id", hex.EncodeToString(c.CredentialID[:min(8, len(c.CredentialID))]),
 				"error", err)
 		}
@@ -196,6 +231,7 @@ func CredentialToAPI(c *webauthn.Credential, userID int64, name string) *auth.Pa
 		rawAttestation, err = json.Marshal(c.Attestation)
 		if err != nil {
 			slog.Warn("webauthn: failed to marshal attestation data",
+				"user_id", userID,
 				"credential_id", hex.EncodeToString(c.ID[:min(8, len(c.ID))]),
 				"error", err)
 			rawAttestation = nil
@@ -244,7 +280,6 @@ func NewWebAuthn(rpID, rpDisplayName string, rpOrigins []string) (*webauthn.WebA
 // BeginRegistration starts a WebAuthn registration ceremony.
 func BeginRegistration(wa *webauthn.WebAuthn, user *User) (*protocol.CredentialCreation, *webauthn.SessionData, error) {
 	return wa.BeginRegistration(user,
-		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
 		webauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
 			ResidentKey:      protocol.ResidentKeyRequirementRequired,
 			UserVerification: protocol.VerificationRequired,

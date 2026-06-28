@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,9 +30,11 @@ type Authenticator struct {
 }
 
 // NewAuthenticator creates an Authenticator with the given store and options.
-// The store must implement SessionReader, UserReader, and APIKeyReader.
-// If no idle/absolute timeout is provided, defaults of 1h and 24h are applied.
-func NewAuthenticator(store AuthStore, opts ...Option) *Authenticator {
+// The store must implement SessionReader, UserReader, and APIKeyReader. It
+// returns an error when the assembled configuration is unusable (see
+// [CookieConfig.Validate] and [WithActivityThrottle]). If no idle/absolute
+// timeout is provided, defaults of 1h and 24h are applied.
+func NewAuthenticator(store AuthStore, opts ...Option) (*Authenticator, error) {
 	cfg := authConfig{}
 	for _, o := range opts {
 		if o != nil {
@@ -39,23 +42,36 @@ func NewAuthenticator(store AuthStore, opts ...Option) *Authenticator {
 		}
 	}
 	cfg.defaults()
-	a := &Authenticator{store: store, cfg: cfg}
-	// Build the default chain once (avoids per-request allocation). It is only
-	// consulted when no explicit chain was injected via WithVerifiers.
-	a.defaultVerifiers = []CredentialVerifier{
-		NewSessionVerifier(store,
-			WithLogger(cfg.logger),
-			WithIdleTimeout(cfg.idleTimeout),
-			WithAbsTimeout(cfg.absTimeout),
-			WithCookie(cfg.cookie),
-			WithActivityThrottle(cfg.activityThrottle),
-		),
-		NewAPIKeyVerifier(store),
+	if err := cfg.validate(); err != nil {
+		return nil, err
 	}
-	return a
+	a := &Authenticator{store: store, cfg: cfg}
+	if cfg.bypass != nil {
+		a.logger().Warn("auth: authentication bypass is configured; matching requests are granted synthetic admin access and must never be enabled in production")
+	}
+	// Build the default chain once (avoids per-request allocation). It is only
+	// consulted when no explicit chain was injected via WithVerifiers. The
+	// verifier is built from the cfg already validated above, so its error is
+	// unreachable here; propagate it rather than discard it.
+	sv, err := NewSessionVerifier(store,
+		WithLogger(cfg.logger),
+		WithIdleTimeout(cfg.idleTimeout),
+		WithAbsTimeout(cfg.absTimeout),
+		WithCookie(cfg.cookie),
+		WithActivityThrottle(cfg.activityThrottle),
+	)
+	if err != nil {
+		return nil, err
+	}
+	a.defaultVerifiers = []CredentialVerifier{
+		sv,
+		NewAPIKeyVerifier(store, WithLogger(cfg.logger)),
+	}
+	return a, nil
 }
 
-// syntheticAdminUser is the user injected when BypassAuth is true.
+// syntheticAdminUser is the user injected when the configured bypass
+// function (see [WithBypass]) reports true.
 var syntheticAdminUser = &User{
 	ID:       0,
 	Username: string(RoleAdmin),
@@ -63,8 +79,11 @@ var syntheticAdminUser = &User{
 	Enabled:  true,
 }
 
-// Authenticate checks session cookie first, then API key header, then API key
-// query param. Returns the user and session hash, or [ErrUnauthenticated].
+// Authenticate resolves the request to a user by running the credential
+// verifier chain in order. The default chain checks the session cookie first,
+// then the API key (accepted only via the X-Api-Key header, never a URL query
+// parameter -- CWE-598). It returns the user and session hash, or
+// [ErrUnauthenticated] when no verifier authenticates the request.
 func (a *Authenticator) Authenticate(r *http.Request) (*User, string, error) {
 	if a.cfg.bypass != nil && a.cfg.bypass() {
 		return syntheticAdminUser, "", nil
@@ -89,6 +108,9 @@ func (a *Authenticator) Authenticate(r *http.Request) (*User, string, error) {
 func (a *Authenticator) RequireAuth(w http.ResponseWriter, r *http.Request) (*User, string, bool) {
 	user, sessHash, err := a.Authenticate(r)
 	if err != nil {
+		if !errors.Is(err, ErrUnauthenticated) {
+			a.logger().Warn("auth: authentication backend error", "error", err)
+		}
 		if IsBrowserRequest(r) {
 			http.Redirect(w, r, a.loginPath()+"?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
 		} else {
@@ -107,6 +129,14 @@ func (a *Authenticator) loginPath() string {
 	return "/login"
 }
 
+// logger returns the configured logger or slog.Default().
+func (a *Authenticator) logger() *slog.Logger {
+	if a.cfg.logger != nil {
+		return a.cfg.logger
+	}
+	return slog.Default()
+}
+
 // verifiers returns the ordered list of credential verifiers. When an explicit
 // chain was injected via [WithVerifiers], it is used; otherwise the default
 // session + API-key chain (built once in [NewAuthenticator]) is returned.
@@ -119,6 +149,11 @@ func (a *Authenticator) verifiers() []CredentialVerifier {
 
 // HasRole reports whether the user is authorized for the given role.
 func HasRole(user *User, role Role) bool {
+	// Mirror the existing nil-guard convention in ValidateSession; fail-closed
+	// for a nil principal rather than panicking in an authz primitive.
+	if user == nil {
+		return false
+	}
 	return user.Role == role || user.Role == RoleAdmin
 }
 
@@ -133,7 +168,7 @@ func ValidateRedirectURI(uri string) string {
 	if strings.Contains(uri, "://") {
 		return "/"
 	}
-	if strings.ContainsAny(uri, "\\") {
+	if strings.Contains(uri, "\\") {
 		return "/"
 	}
 	u, err := url.Parse(uri)

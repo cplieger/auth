@@ -17,9 +17,13 @@ var (
 	ErrTokenInvalid = errors.New("auth: token invalid")
 )
 
-// CSRF token format: nonce[16] ∥ expiry[8] ∥ HMAC-SHA256(key, nonce ∥ sessionHash ∥ expiry)
+// CSRF token format: nonce[16] ∥ issuedAt[8] ∥ HMAC-SHA256(key, nonce ∥ sessionHash ∥ issuedAt)
 // Total: 16 + 8 + 32 = 56 bytes.
-const csrfTokenLen = 16 + 8 + sha256.Size
+const (
+	csrfNonceLen     = 16
+	csrfTimestampLen = 8
+	csrfTokenLen     = csrfNonceLen + csrfTimestampLen + sha256.Size
+)
 
 // --- Session Token Rotation ---
 
@@ -40,27 +44,27 @@ func RotateSessionToken(oldPlaintext string) (newPlaintext, newHash, oldHash str
 
 // CSRFToken generates a CSRF token bound to the given session hash using
 // HMAC-SHA256 with a random 16-byte nonce per OWASP signed double-submit.
-// Format: base64url(nonce[16] ∥ expiry[8] ∥ HMAC-SHA256(key, nonce ∥ sessionHash ∥ expiry))
+// Format: base64url(nonce[16] ∥ issuedAt[8] ∥ HMAC-SHA256(key, nonce ∥ sessionHash ∥ issuedAt))
 func CSRFToken(key []byte, sessionHash string) (string, error) {
 	if len(key) == 0 {
 		return "", errors.New("auth: CSRF key must not be empty")
 	}
-	nonce := make([]byte, 16)
+	nonce := make([]byte, csrfNonceLen)
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	expiry := make([]byte, 8)
-	binary.BigEndian.PutUint64(expiry, uint64(time.Now().Unix())) //nolint:gosec // G115: Unix() is non-negative in practice
+	issuedAt := make([]byte, csrfTimestampLen)
+	binary.BigEndian.PutUint64(issuedAt, uint64(time.Now().Unix())) //nolint:gosec // G115: Unix() is non-negative in practice
 
 	mac := hmac.New(sha256.New, key)
 	mac.Write(nonce)
 	mac.Write([]byte(sessionHash))
-	mac.Write(expiry)
+	mac.Write(issuedAt)
 	sig := mac.Sum(nil)
 
 	token := make([]byte, 0, csrfTokenLen)
 	token = append(token, nonce...)
-	token = append(token, expiry...)
+	token = append(token, issuedAt...)
 	token = append(token, sig...)
 	return base64.RawURLEncoding.EncodeToString(token), nil
 }
@@ -75,21 +79,21 @@ func VerifyCSRFToken(key []byte, sessionHash, token string, maxAge time.Duration
 	if err != nil || len(raw) != csrfTokenLen {
 		return ErrTokenInvalid
 	}
-	nonce := raw[:16]
-	expiry := raw[16:24]
-	sig := raw[24:56]
+	nonce := raw[:csrfNonceLen]
+	issuedAt := raw[csrfNonceLen : csrfNonceLen+csrfTimestampLen]
+	sig := raw[csrfNonceLen+csrfTimestampLen:]
 
 	mac := hmac.New(sha256.New, key)
 	mac.Write(nonce)
 	mac.Write([]byte(sessionHash))
-	mac.Write(expiry)
+	mac.Write(issuedAt)
 	expected := mac.Sum(nil)
 
 	if subtle.ConstantTimeCompare(sig, expected) != 1 {
 		return ErrTokenInvalid
 	}
 
-	created := time.Unix(int64(binary.BigEndian.Uint64(expiry)), 0) //nolint:gosec // G115: timestamp fits in int64
+	created := time.Unix(int64(binary.BigEndian.Uint64(issuedAt)), 0) //nolint:gosec // G115: timestamp fits in int64
 	if time.Since(created) > maxAge {
 		return ErrTokenExpired
 	}

@@ -1,10 +1,11 @@
 // Package ratelimit implements a dual sliding-window rate limiter for
-// authentication attempts (per-IP and per-account). It is consumed by
-// the server's auth handlers via the RateLimitChecker interface.
+// authentication attempts (per-IP and per-account). Callers (typically an
+// HTTP server's auth handlers) consume it via the Checker interface.
 package ratelimit
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -35,7 +36,41 @@ func DefaultConfig() Config {
 	}
 }
 
-// Checker is the narrow interface consumed by the server layer.
+// normalizeConfig substitutes DefaultConfig values for non-positive
+// PruneInterval, IPWindow, AcctWindow, and MaxEntries, logging a warning per
+// substitution. A non-positive PruneInterval otherwise panics time.NewTicker
+// in the prune goroutine and crashes the consumer process; a non-positive
+// MaxEntries disables all tracking (fail-open). Limits (IPLimit/AcctLimit) are
+// left as supplied -- a caller may legitimately set them -- and guarded at the
+// use site in slidingWindow.retryAfter.
+func normalizeConfig(cfg Config) Config {
+	def := DefaultConfig()
+	if cfg.PruneInterval <= 0 {
+		slog.Warn("auth/ratelimit: non-positive PruneInterval replaced with default", "default", def.PruneInterval)
+		cfg.PruneInterval = def.PruneInterval
+	}
+	if cfg.IPWindow <= 0 {
+		slog.Warn("auth/ratelimit: non-positive IPWindow replaced with default", "default", def.IPWindow)
+		cfg.IPWindow = def.IPWindow
+	}
+	if cfg.AcctWindow <= 0 {
+		slog.Warn("auth/ratelimit: non-positive AcctWindow replaced with default", "default", def.AcctWindow)
+		cfg.AcctWindow = def.AcctWindow
+	}
+	if cfg.MaxEntries <= 0 {
+		slog.Warn("auth/ratelimit: non-positive MaxEntries replaced with default", "default", def.MaxEntries)
+		cfg.MaxEntries = def.MaxEntries
+	}
+	if cfg.IPLimit <= 0 {
+		slog.Warn("auth/ratelimit: non-positive IPLimit blocks every request after the first recorded attempt", "ip_limit", cfg.IPLimit)
+	}
+	if cfg.AcctLimit <= 0 {
+		slog.Warn("auth/ratelimit: non-positive AcctLimit blocks every request after the first recorded attempt", "acct_limit", cfg.AcctLimit)
+	}
+	return cfg
+}
+
+// Checker is the narrow interface consumed by callers (e.g. HTTP auth handlers).
 // It decouples request handling from the concrete sliding-window implementation.
 type Checker interface {
 	Allow(ip, username string) (allowed bool, retryAfter time.Duration)
@@ -61,6 +96,8 @@ type RateLimiter struct {
 	maxEntries    int
 	muIP          sync.Mutex
 	muAcct        sync.Mutex
+	ipCapWarned   bool
+	acctCapWarned bool
 }
 
 type slidingWindow struct {
@@ -71,6 +108,7 @@ type slidingWindow struct {
 // A background goroutine prunes stale entries at cfg.PruneInterval.
 // The goroutine stops when ctx is cancelled. Call Stop for explicit shutdown.
 func NewRateLimiter(ctx context.Context, cfg Config) *RateLimiter {
+	cfg = normalizeConfig(cfg)
 	ctx, cancel := context.WithCancel(ctx)
 	rl := &RateLimiter{
 		ipWindows:     make(map[string]*slidingWindow),
@@ -90,17 +128,22 @@ func NewRateLimiter(ctx context.Context, cfg Config) *RateLimiter {
 
 // Allow checks both IP and account windows. Both must be within limits
 // for the request to proceed. Returns false with a retry-after duration
-// if either limit is exceeded.
+// if either limit is exceeded. An empty ip or username skips that dimension
+// (a missing key carries no per-client signal and would otherwise lump
+// unrelated callers into one shared bucket); callers should supply a real
+// per-client IP so the IP dimension applies.
 func (rl *RateLimiter) Allow(ip, username string) (allowed bool, retryAfter time.Duration) {
 	now := rl.nowFunc()
 
 	var ipRetry, acctRetry time.Duration
 
-	rl.muIP.Lock()
-	if w, ok := rl.ipWindows[ip]; ok {
-		ipRetry = w.retryAfter(now, rl.ipWindow, rl.ipLimit)
+	if ip != "" {
+		rl.muIP.Lock()
+		if w, ok := rl.ipWindows[ip]; ok {
+			ipRetry = w.retryAfter(now, rl.ipWindow, rl.ipLimit)
+		}
+		rl.muIP.Unlock()
 	}
-	rl.muIP.Unlock()
 
 	if username != "" {
 		rl.muAcct.Lock()
@@ -118,29 +161,98 @@ func (rl *RateLimiter) Allow(ip, username string) (allowed bool, retryAfter time
 	return true, 0
 }
 
-// Record records a failed authentication attempt in both the IP and
-// account sliding windows.
+// Record records a failed authentication attempt in the IP and account
+// sliding windows. An empty ip or username skips that dimension, mirroring
+// Allow and Reset.
 func (rl *RateLimiter) Record(ip, username string) {
 	now := rl.nowFunc()
 
-	rl.muIP.Lock()
-	if w, ok := rl.ipWindows[ip]; ok {
-		w.add(now)
-	} else if len(rl.ipWindows) < rl.maxEntries {
-		rl.ipWindows[ip] = &slidingWindow{}
-		rl.ipWindows[ip].add(now)
+	if ip != "" {
+		rl.muIP.Lock()
+		rl.recordLocked(rl.ipWindows, ip, now, rl.ipWindow, rl.ipLimit, "per-IP", &rl.ipCapWarned)
+		rl.muIP.Unlock()
 	}
-	rl.muIP.Unlock()
 
 	if username != "" {
 		rl.muAcct.Lock()
-		if w, ok := rl.acctWindows[username]; ok {
-			w.add(now)
-		} else if len(rl.acctWindows) < rl.maxEntries {
-			rl.acctWindows[username] = &slidingWindow{}
-			rl.acctWindows[username].add(now)
-		}
+		rl.recordLocked(rl.acctWindows, username, now, rl.acctWindow, rl.acctLimit, "per-account", &rl.acctCapWarned)
 		rl.muAcct.Unlock()
+	}
+}
+
+// recordLocked appends now to key's sliding window, creating it if absent.
+// When the map is already at maxEntries and key is new, it evicts an existing
+// entry (preferring one not currently at its limit) to make room instead of
+// silently dropping the new key. Dropping new keys lets a distributed attacker
+// pin the map full with throwaway keys so Allow fails open for an
+// as-yet-untracked target, disabling the limit this window exists to enforce.
+// The first eviction of each saturation episode emits an edge-triggered warning
+// through warned (reset in prune once the map falls back below the cap) so
+// operators can observe sustained entry-cap pressure. window and limit are the
+// scope's tuning values, forwarded to the evictor so it can avoid dropping a
+// still-blocking entry. The caller holds the relevant mutex.
+func (rl *RateLimiter) recordLocked(windows map[string]*slidingWindow, key string, now time.Time, window time.Duration, limit int, scope string, warned *bool) {
+	if w, ok := windows[key]; ok {
+		w.add(now)
+		return
+	}
+	if len(windows) >= rl.maxEntries {
+		if !*warned {
+			*warned = true
+			slog.Warn("auth/ratelimit: entry cap reached; evicting entries to admit new keys",
+				"scope", scope, "max_entries", rl.maxEntries)
+		}
+		evictLeastRecentlyActive(windows, now, window, limit)
+	}
+	w := &slidingWindow{}
+	w.add(now)
+	windows[key] = w
+}
+
+// evictLeastRecentlyActive deletes one entry to admit a new key. It first
+// targets entries that are not currently at their limit (count < limit),
+// evicting the one whose most recent timestamp is oldest. An empty window
+// has a zero-value last timestamp; a fully-expired window still carries its
+// newest (already-expired) timestamp until count reslices it -- older than
+// any live entry's -- so both sort oldest and are dropped first.
+// Only when every entry is at its limit, leaving no harmless victim, does it
+// fall back to evicting the least-recently-active entry overall. Protecting
+// at-limit entries keeps a still-blocking account from having its accumulated
+// count silently reset, which would lift the block and weaken the per-account
+// OWASP ASVS 2.2.1 cap; it also makes eviction consistent with prune, which
+// deletes only fully-expired windows. The caller holds the owning map's mutex;
+// count mutates each window's timestamps.
+func evictLeastRecentlyActive(windows map[string]*slidingWindow, now time.Time, window time.Duration, limit int) {
+	var (
+		victim       string // oldest entry that is not at its limit
+		victimLast   time.Time
+		haveVictim   bool
+		fallback     string // oldest entry overall, used when all are at-limit
+		fallbackLast time.Time
+		haveFallback bool
+	)
+	for k, w := range windows {
+		var last time.Time
+		if n := len(w.timestamps); n > 0 {
+			last = w.timestamps[n-1]
+		}
+		if !haveFallback || last.Before(fallbackLast) {
+			fallback, fallbackLast, haveFallback = k, last, true
+		}
+		// count is read after last so the reslice it performs cannot invalidate
+		// the timestamps[n-1] index above.
+		if w.count(now, window) >= limit {
+			continue // at-limit: protected unless no other victim exists
+		}
+		if !haveVictim || last.Before(victimLast) {
+			victim, victimLast, haveVictim = k, last, true
+		}
+	}
+	switch {
+	case haveVictim:
+		delete(windows, victim)
+	case haveFallback:
+		delete(windows, fallback)
 	}
 }
 
@@ -153,9 +265,11 @@ func (rl *RateLimiter) Stop() {
 // Call after a successful authentication to prevent permanent soft-lockout
 // (OWASP ASVS 2.2.1).
 func (rl *RateLimiter) Reset(ip, username string) {
-	rl.muIP.Lock()
-	delete(rl.ipWindows, ip)
-	rl.muIP.Unlock()
+	if ip != "" {
+		rl.muIP.Lock()
+		delete(rl.ipWindows, ip)
+		rl.muIP.Unlock()
+	}
 
 	if username != "" {
 		rl.muAcct.Lock()
@@ -178,6 +292,10 @@ func (rl *RateLimiter) pruneLoop(ctx context.Context) {
 	}
 }
 
+// prune removes windows whose entries have all expired and, once a map falls
+// back below maxEntries, clears that scope's cap-warning flag so a later
+// saturation episode re-warns (the reset half of recordLocked's edge-triggered
+// warning). It locks each map's mutex in turn.
 func (rl *RateLimiter) prune() {
 	now := rl.nowFunc()
 
@@ -187,6 +305,9 @@ func (rl *RateLimiter) prune() {
 			delete(rl.ipWindows, k)
 		}
 	}
+	if len(rl.ipWindows) < rl.maxEntries {
+		rl.ipCapWarned = false
+	}
 	rl.muIP.Unlock()
 
 	rl.muAcct.Lock()
@@ -195,16 +316,24 @@ func (rl *RateLimiter) prune() {
 			delete(rl.acctWindows, k)
 		}
 	}
+	if len(rl.acctWindows) < rl.maxEntries {
+		rl.acctCapWarned = false
+	}
 	rl.muAcct.Unlock()
 }
 
 // slidingWindow methods
 
+// add appends now to the window's timestamps. Caller must hold the
+// owning map's mutex (muIP or muAcct); this mutates w.timestamps.
 func (w *slidingWindow) add(now time.Time) {
 	w.timestamps = append(w.timestamps, now)
 }
 
-// count returns the number of timestamps within the window, pruning old ones.
+// count returns the number of timestamps within the window, pruning expired
+// ones. Caller must hold the owning map's mutex (muIP or muAcct): despite the
+// query-like name this mutates w.timestamps (it reslices off expired entries),
+// which is why the read-looking Allow->retryAfter path also takes the lock.
 func (w *slidingWindow) count(now time.Time, window time.Duration) int {
 	cutoff := now.Add(-window)
 	i := 0
@@ -219,9 +348,14 @@ func (w *slidingWindow) count(now time.Time, window time.Duration) int {
 
 // retryAfter returns the duration until the oldest relevant entry expires,
 // if the window is at or over the limit. Returns 0 if under the limit.
+// Caller must hold the owning map's mutex (muIP or muAcct); mutates
+// w.timestamps transitively through count.
 func (w *slidingWindow) retryAfter(now time.Time, window time.Duration, limit int) time.Duration {
 	n := w.count(now, window)
-	if n < limit {
+	// n == 0 short-circuits the limit <= 0 case: normalizeConfig leaves a
+	// caller-supplied non-positive IPLimit/AcctLimit as-is, so an empty window
+	// satisfies n >= limit and the w.timestamps[0] read below would panic.
+	if n < limit || n == 0 {
 		return 0
 	}
 	oldest := w.timestamps[0]

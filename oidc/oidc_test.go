@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"net/url"
 	"strings"
 	"testing"
@@ -31,7 +32,10 @@ func TestProperty_OIDCIdentityResolution(t *testing.T) {
 			Enabled:  true,
 		}
 
-		user, isNew := ResolveUser(claims, existingBySub)
+		user, isNew, err := ResolveUser(claims, existingBySub)
+		if err != nil {
+			t.Fatalf("ResolveUser(existing) error = %v, want nil", err)
+		}
 		if user != existingBySub {
 			t.Fatal("expected existingBySub on sub match")
 		}
@@ -39,7 +43,10 @@ func TestProperty_OIDCIdentityResolution(t *testing.T) {
 			t.Fatal("expected isNew=false")
 		}
 
-		user, isNew = ResolveUser(claims, nil)
+		user, isNew, err = ResolveUser(claims, nil)
+		if err != nil {
+			t.Fatalf("ResolveUser(new) error = %v, want nil", err)
+		}
 		if !isNew {
 			t.Fatal("expected isNew=true")
 		}
@@ -60,7 +67,10 @@ func TestProperty_OIDCIdentityResolution_EmptyPreferredUsername(t *testing.T) {
 			Email:             rapid.StringMatching(`[a-z]{4,8}@[a-z]{4,8}\.[a-z]{2,4}`).Draw(t, "email"),
 			PreferredUsername: "",
 		}
-		user, isNew := ResolveUser(claims, nil)
+		user, isNew, err := ResolveUser(claims, nil)
+		if err != nil {
+			t.Fatalf("ResolveUser(email fallback) error = %v, want nil", err)
+		}
 		if !isNew {
 			t.Fatal("expected isNew=true")
 		}
@@ -68,6 +78,47 @@ func TestProperty_OIDCIdentityResolution_EmptyPreferredUsername(t *testing.T) {
 			t.Fatalf("username = %q, want email %q", user.Username, claims.Email)
 		}
 	})
+}
+
+func TestUsernameFromClaims(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		claims  *Claims
+		want    string
+		wantErr bool
+	}{
+		{"preferred_username preferred", &Claims{PreferredUsername: "alice", Email: "a@x.io"}, "alice", false},
+		{"email fallback when no preferred_username", &Claims{Email: "a@x.io"}, "a@x.io", false},
+		{"neither claim present is rejected", &Claims{}, "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := usernameFromClaims(tc.claims)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("usernameFromClaims error = %v, wantErr=%v", err, tc.wantErr)
+			}
+			if tc.wantErr && !errors.Is(err, ErrOIDCNoUsername) {
+				t.Errorf("error %v does not wrap ErrOIDCNoUsername", err)
+			}
+			if got != tc.want {
+				t.Errorf("usernameFromClaims = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveUser_rejects_token_without_username_or_email(t *testing.T) {
+	t.Parallel()
+	claims := &Claims{Subject: "sub-123", Issuer: "https://idp.example.com"}
+	user, isNew, err := ResolveUser(claims, nil)
+	if !errors.Is(err, ErrOIDCNoUsername) {
+		t.Fatalf("ResolveUser error = %v, want ErrOIDCNoUsername", err)
+	}
+	if user != nil || isNew {
+		t.Errorf("ResolveUser = (%+v, isNew=%v), want (nil, false) on rejected provisioning", user, isNew)
+	}
 }
 
 func TestProperty_PKCERoundTrip(t *testing.T) {
@@ -168,5 +219,66 @@ func TestAuthorizationURL_includes_pkce_and_state(t *testing.T) {
 	}
 	if got := q.Get("code_challenge_method"); got != "S256" {
 		t.Errorf("code_challenge_method = %q, want S256 (PKCE)", got)
+	}
+}
+
+// TestCheckAuthorizedParty exercises the extracted OIDC Core 3.1.3.7 step-3
+// azp check directly: a multi-audience ID token must carry azp == client_id,
+// while single/zero-audience tokens skip the check.
+func TestCheckAuthorizedParty(t *testing.T) {
+	t.Parallel()
+	const clientID = "client-123"
+	cases := []struct {
+		name      string
+		audiences []string
+		azp       string
+		wantErr   bool
+	}{
+		{"single audience ignores azp", []string{clientID}, "", false},
+		{"single audience with foreign azp still ok", []string{clientID}, "someone-else", false},
+		{"no audience", nil, "", false},
+		{"multi audience matching azp", []string{clientID, "other"}, clientID, false},
+		{"multi audience mismatched azp", []string{clientID, "other"}, "other", true},
+		{"multi audience empty azp", []string{clientID, "other"}, "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := checkAuthorizedParty(tc.audiences, tc.azp, clientID)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("checkAuthorizedParty(%v, %q, %q) error = %v, wantErr=%v", tc.audiences, tc.azp, clientID, err, tc.wantErr)
+			}
+			if err != nil && !errors.Is(err, ErrOIDCTokenInvalid) {
+				t.Errorf("checkAuthorizedParty error %v does not wrap ErrOIDCTokenInvalid", err)
+			}
+		})
+	}
+}
+
+func TestCheckNonce(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		expected string
+		got      string
+		wantErr  bool
+	}{
+		{"match", "abc123", "abc123", false},
+		{"mismatch", "abc123", "xyz789", true},
+		{"empty expected rejected (fail closed)", "", "", true},
+		{"empty expected, token carries a nonce", "", "abc123", true},
+		{"expected set, token nonce empty", "abc123", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := checkNonce(tc.expected, tc.got)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("checkNonce(%q, %q) error = %v, wantErr=%v", tc.expected, tc.got, err, tc.wantErr)
+			}
+			if err != nil && !errors.Is(err, ErrOIDCNonceMismatch) {
+				t.Errorf("checkNonce error %v does not wrap ErrOIDCNonceMismatch", err)
+			}
+		})
 	}
 }

@@ -15,7 +15,7 @@ import (
 // config: IdleTimeout=1h, AbsTimeout=24h, LoginPath="/login", Logger=slog.Default.
 func TestNewAuthenticator_NoOptions_AppliesDefaults(t *testing.T) {
 	t.Parallel()
-	a := NewAuthenticator(newFakeSessionStore())
+	a := mustAuthenticator(t, newFakeSessionStore())
 	if a.cfg.idleTimeout != DefaultIdleTimeout {
 		t.Errorf("idleTimeout = %v, want %v", a.cfg.idleTimeout, DefaultIdleTimeout)
 	}
@@ -31,7 +31,7 @@ func TestNewAuthenticator_NoOptions_AppliesDefaults(t *testing.T) {
 // uses default timeouts when no options are provided.
 func TestNewSessionVerifier_NoOptions_AppliesDefaults(t *testing.T) {
 	t.Parallel()
-	v := NewSessionVerifier(newFakeSessionStore())
+	v := mustSessionVerifier(t, newFakeSessionStore())
 	if v.cfg.idleTimeout != DefaultIdleTimeout {
 		t.Errorf("idleTimeout = %v, want %v", v.cfg.idleTimeout, DefaultIdleTimeout)
 	}
@@ -69,7 +69,7 @@ func TestNewSessionVerifier_NoOptions_SessionValid(t *testing.T) {
 	}
 
 	// Use NO timeout options — defaults must keep 5-minute-old session valid
-	v := NewSessionVerifier(db)
+	v := mustSessionVerifier(t, db)
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
@@ -109,7 +109,7 @@ func TestNewAuthenticator_NoOptions_SessionValid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewAuthenticator(db) // NO options
+	a := mustAuthenticator(t, db) // NO options
 	r, _ := http.NewRequest(http.MethodGet, "/api/data", nil)
 	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
 
@@ -168,7 +168,7 @@ func TestWithX_OptionOrderDoesNotMatter(t *testing.T) {
 	cookie := CookieConfig{Posture: PostureInsecureLAN, Name: "custom_sess"}
 
 	// Order A: logger, idle, abs, cookie, loginPath
-	a1 := NewAuthenticator(newFakeSessionStore(),
+	a1 := mustAuthenticator(t, newFakeSessionStore(),
 		WithLogger(logger),
 		WithIdleTimeout(2*time.Hour),
 		WithAbsTimeout(48*time.Hour),
@@ -176,7 +176,7 @@ func TestWithX_OptionOrderDoesNotMatter(t *testing.T) {
 		WithLoginPath("/signin"),
 	)
 	// Order B: reverse
-	a2 := NewAuthenticator(newFakeSessionStore(),
+	a2 := mustAuthenticator(t, newFakeSessionStore(),
 		WithLoginPath("/signin"),
 		WithCookie(cookie),
 		WithAbsTimeout(48*time.Hour),
@@ -204,9 +204,9 @@ func TestWithX_OptionOrderDoesNotMatter(t *testing.T) {
 // TestWithX_IndependentThreading verifies each option only modifies its own field.
 func TestWithX_IndependentThreading(t *testing.T) {
 	t.Parallel()
-	base := NewAuthenticator(newFakeSessionStore())
+	base := mustAuthenticator(t, newFakeSessionStore())
 
-	withIdle := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(5*time.Hour))
+	withIdle := mustAuthenticator(t, newFakeSessionStore(), WithIdleTimeout(5*time.Hour))
 	if withIdle.cfg.absTimeout != DefaultAbsTimeout {
 		t.Errorf("WithIdleTimeout affected absTimeout: %v", withIdle.cfg.absTimeout)
 	}
@@ -214,12 +214,12 @@ func TestWithX_IndependentThreading(t *testing.T) {
 		t.Error("WithIdleTimeout affected loginPath")
 	}
 
-	withAbs := NewAuthenticator(newFakeSessionStore(), WithAbsTimeout(72*time.Hour))
+	withAbs := mustAuthenticator(t, newFakeSessionStore(), WithAbsTimeout(72*time.Hour))
 	if withAbs.cfg.idleTimeout != DefaultIdleTimeout {
 		t.Errorf("WithAbsTimeout affected idleTimeout: %v", withAbs.cfg.idleTimeout)
 	}
 
-	withLogin := NewAuthenticator(newFakeSessionStore(), WithLoginPath("/auth"))
+	withLogin := mustAuthenticator(t, newFakeSessionStore(), WithLoginPath("/auth"))
 	if withLogin.cfg.idleTimeout != DefaultIdleTimeout {
 		t.Errorf("WithLoginPath affected idleTimeout: %v", withLogin.cfg.idleTimeout)
 	}
@@ -254,7 +254,7 @@ func TestNewHasher_NoPepper_EqualsOldBehavior(t *testing.T) {
 func TestNewAuthenticator_NilOptionSlice(t *testing.T) {
 	t.Parallel()
 	var opts []Option
-	a := NewAuthenticator(newFakeSessionStore(), opts...)
+	a := mustAuthenticator(t, newFakeSessionStore(), opts...)
 	if a.cfg.idleTimeout != DefaultIdleTimeout {
 		t.Errorf("nil slice: idleTimeout = %v, want %v", a.cfg.idleTimeout, DefaultIdleTimeout)
 	}
@@ -264,7 +264,7 @@ func TestNewAuthenticator_NilOptionSlice(t *testing.T) {
 // "/login" when no WithLoginPath is set.
 func TestRequireAuth_DefaultLoginPath_NoOptions(t *testing.T) {
 	t.Parallel()
-	a := NewAuthenticator(newFakeSessionStore()) // NO options
+	a := mustAuthenticator(t, newFakeSessionStore()) // NO options
 	r, _ := http.NewRequest(http.MethodGet, "/protected", nil)
 	r.Header.Set("Accept", "text/html")
 	w := httptest.NewRecorder()

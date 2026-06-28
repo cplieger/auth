@@ -2,7 +2,7 @@ package auth
 
 import "testing"
 
-// TestNilOption_InSlice_NoParic regression: nil Option in variadic must not panic.
+// TestNilOption_InSlice_NoPanic regression: nil Option in variadic must not panic.
 func TestNilOption_InSlice_NoPanic(t *testing.T) {
 	t.Parallel()
 	defer func() {
@@ -10,7 +10,7 @@ func TestNilOption_InSlice_NoPanic(t *testing.T) {
 			t.Fatalf("panic with nil Option in slice: %v", r)
 		}
 	}()
-	a := NewAuthenticator(newFakeSessionStore(), nil, WithLoginPath("/x"), nil)
+	a := mustAuthenticator(t, newFakeSessionStore(), nil, WithLoginPath("/x"), nil)
 	if a.cfg.idleTimeout != DefaultIdleTimeout {
 		t.Errorf("defaults not applied after nil option: %v", a.cfg.idleTimeout)
 	}
@@ -27,7 +27,7 @@ func TestNilOption_SessionVerifier_NoPanic(t *testing.T) {
 			t.Fatalf("panic with nil Option: %v", r)
 		}
 	}()
-	v := NewSessionVerifier(newFakeSessionStore(), nil)
+	v := mustSessionVerifier(t, newFakeSessionStore(), nil)
 	if v.cfg.idleTimeout != DefaultIdleTimeout {
 		t.Errorf("defaults not applied: %v", v.cfg.idleTimeout)
 	}

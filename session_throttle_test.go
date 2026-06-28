@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -73,7 +74,7 @@ func TestSessionVerifier_Throttle_Zero_WritesEveryRequest(t *testing.T) {
 	t.Parallel()
 	cs, plaintext, hash := setupThrottleSession(t)
 	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
-	v := NewSessionVerifier(cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
+	v := mustSessionVerifier(t, cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	ctx := context.Background()
 	r := throttleRequest(plaintext)
 
@@ -94,8 +95,8 @@ func TestSessionVerifier_Throttle_Positive_AtMostOncePerWindow(t *testing.T) {
 	t.Parallel()
 	cs, plaintext, hash := setupThrottleSession(t)
 	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
-	v := NewSessionVerifier(cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
-		WithActivityThrottle(time.Hour))
+	v := mustSessionVerifier(t, cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
+		WithActivityThrottle(30*time.Minute))
 	ctx := context.Background()
 	r := throttleRequest(plaintext)
 
@@ -105,38 +106,39 @@ func TestSessionVerifier_Throttle_Positive_AtMostOncePerWindow(t *testing.T) {
 		}
 	}
 	if got := cs.count(hash); got != 1 {
-		t.Fatalf("throttle=1h: writes = %d, want 1 within window", got)
+		t.Fatalf("throttle=30m: writes = %d, want 1 within window", got)
 	}
 }
 
 // TestSessionVerifier_Throttle_WritesAgainAfterWindow confirms a second write
 // occurs once the throttle window has elapsed.
 func TestSessionVerifier_Throttle_WritesAgainAfterWindow(t *testing.T) {
-	t.Parallel()
-	cs, plaintext, hash := setupThrottleSession(t)
-	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
-	v := NewSessionVerifier(cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
-		WithActivityThrottle(10*time.Millisecond))
-	ctx := context.Background()
-	r := throttleRequest(plaintext)
+	synctest.Test(t, func(t *testing.T) {
+		cs, plaintext, hash := setupThrottleSession(t)
+		cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
+		v := mustSessionVerifier(t, cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
+			WithActivityThrottle(10*time.Millisecond))
+		ctx := context.Background()
+		r := throttleRequest(plaintext)
 
-	if _, _, err := v.Verify(ctx, r); err != nil {
-		t.Fatalf("Verify error: %v", err)
-	}
-	if _, _, err := v.Verify(ctx, r); err != nil {
-		t.Fatalf("Verify error: %v", err)
-	}
-	if got := cs.count(hash); got != 1 {
-		t.Fatalf("after first window: writes = %d, want 1", got)
-	}
+		if _, _, err := v.Verify(ctx, r); err != nil {
+			t.Fatalf("Verify error: %v", err)
+		}
+		if _, _, err := v.Verify(ctx, r); err != nil {
+			t.Fatalf("Verify error: %v", err)
+		}
+		if got := cs.count(hash); got != 1 {
+			t.Fatalf("within window: writes = %d, want 1", got)
+		}
 
-	time.Sleep(30 * time.Millisecond) // exceed the 10ms window with margin
-	if _, _, err := v.Verify(ctx, r); err != nil {
-		t.Fatalf("Verify error: %v", err)
-	}
-	if got := cs.count(hash); got != 2 {
-		t.Fatalf("after window elapsed: writes = %d, want 2", got)
-	}
+		time.Sleep(30 * time.Millisecond) // virtual time: advances instantly inside the bubble
+		if _, _, err := v.Verify(ctx, r); err != nil {
+			t.Fatalf("Verify error: %v", err)
+		}
+		if got := cs.count(hash); got != 2 {
+			t.Fatalf("after window elapsed: writes = %d, want 2", got)
+		}
+	})
 }
 
 // TestSessionVerifier_Throttle_ConcurrentSafe confirms the throttle map is
@@ -146,8 +148,8 @@ func TestSessionVerifier_Throttle_ConcurrentSafe(t *testing.T) {
 	t.Parallel()
 	cs, plaintext, hash := setupThrottleSession(t)
 	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
-	v := NewSessionVerifier(cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
-		WithActivityThrottle(time.Hour))
+	v := mustSessionVerifier(t, cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
+		WithActivityThrottle(30*time.Minute))
 	ctx := context.Background()
 
 	const goroutines = 50

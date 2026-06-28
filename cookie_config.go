@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -30,6 +31,25 @@ const (
 	// HTTPS-proxied traffic. The base name stays configurable via Name.
 	PosturePerRequest
 )
+
+// String returns the posture's name so structured-log attributes render
+// "PostureSecure" rather than the bare iota integer.
+func (p CookiePosture) String() string {
+	switch p {
+	case PostureSecure:
+		return "PostureSecure"
+	case PostureInsecureLAN:
+		return "PostureInsecureLAN"
+	case PostureForceSecure:
+		return "PostureForceSecure"
+	case PosturePerRequest:
+		return "PosturePerRequest"
+	default:
+		return fmt.Sprintf("CookiePosture(%d)", int(p))
+	}
+}
+
+var _ fmt.Stringer = CookiePosture(0)
 
 // CookieConfig holds configurable cookie attributes for session cookies.
 // The posture is a deploy-time decision — ONE stable cookie name per deployment.
@@ -64,9 +84,6 @@ const (
 	CookieNameHTTP   = "auth_session"
 )
 
-// CookieNoPrefix is kept for backward compatibility in tests.
-const CookieNoPrefix = "-"
-
 // DefaultCookieConfig returns a CookieConfig with secure defaults.
 func DefaultCookieConfig() CookieConfig {
 	return CookieConfig{
@@ -86,6 +103,15 @@ func (c *CookieConfig) baseName() string {
 	return c.Name
 }
 
+// usesHostPrefix reports whether this posture emits a __Host--prefixed cookie
+// name. Every posture except PostureInsecureLAN does (PostureSecure,
+// PostureForceSecure, and PosturePerRequest over HTTPS). Centralizing it keeps
+// the posture->prefix rule and the __Host- attribute constraints (no Domain,
+// Path="/") in one place.
+func (c *CookieConfig) usesHostPrefix() bool {
+	return c.Posture != PostureInsecureLAN
+}
+
 // EffectiveName returns the ONE stable cookie name for this deployment.
 // Determined entirely by Posture at config time — no per-request logic.
 //
@@ -95,12 +121,10 @@ func (c *CookieConfig) baseName() string {
 // validation.
 func (c *CookieConfig) EffectiveName() string {
 	base := c.baseName()
-	switch c.Posture {
-	case PostureInsecureLAN:
-		return base
-	default: // PostureSecure, PostureForceSecure, PosturePerRequest
+	if c.usesHostPrefix() {
 		return "__Host-" + base
 	}
+	return base
 }
 
 // requestName returns the cookie name appropriate for this request. In
@@ -214,8 +238,21 @@ func (c *CookieConfig) ReadCookie(r *http.Request) string {
 	return ck.Value
 }
 
-// Validate checks that the CookieConfig fields do not contain characters
-// that would cause http.SetCookie to silently produce a malformed header.
+// Validate reports whether the configuration will produce a usable session
+// cookie. It returns an error when:
+//
+//   - Name, Domain, or Path contains a control character, or Name contains a
+//     character invalid in a cookie name -- cases that would make
+//     http.SetCookie emit a malformed Set-Cookie header; or
+//   - the posture emits a __Host--prefixed name (every posture except
+//     PostureInsecureLAN) while Domain is set or Path is not "/". Browsers
+//     silently reject a __Host- cookie that carries a Domain or a non-root
+//     Path, breaking every session with no server-side error.
+//
+// Validate is the single authority for cookie-config validity: the
+// constructors ([NewAuthenticator], [NewSessionVerifier]) call it so an
+// unusable configuration fails fast at construction, and consumers assembling a
+// CookieConfig by hand may call it directly.
 func (c *CookieConfig) Validate() error {
 	name := c.EffectiveName()
 	if err := validateCookieField("Name", name); err != nil {
@@ -229,6 +266,19 @@ func (c *CookieConfig) Validate() error {
 	if c.Path != "" {
 		if err := validateCookieField("Path", c.Path); err != nil {
 			return err
+		}
+	}
+	// The __Host- prefix (applied by EffectiveName for every posture except
+	// PostureInsecureLAN) is only honored by browsers when the cookie sets no
+	// Domain and uses Path=/. A config that sets Domain or a non-root Path under
+	// such a posture emits a cookie every browser silently rejects, breaking
+	// sessions while Validate() otherwise reports the config as sound.
+	if c.usesHostPrefix() {
+		if c.Domain != "" {
+			return errors.New("auth: CookieConfig.Domain must be empty when the __Host- prefix is used (all postures except PostureInsecureLAN)")
+		}
+		if c.Path != "" && c.Path != "/" {
+			return errors.New("auth: CookieConfig.Path must be \"/\" when the __Host- prefix is used (all postures except PostureInsecureLAN)")
 		}
 	}
 	return nil

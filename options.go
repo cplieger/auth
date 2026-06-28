@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"log/slog"
 	"time"
 )
@@ -34,6 +35,26 @@ func (c *authConfig) defaults() {
 	if c.absTimeout == 0 {
 		c.absTimeout = DefaultAbsTimeout
 	}
+}
+
+// validate reports whether the assembled configuration is usable. The
+// constructors call it after options and defaults are applied so an unusable
+// configuration fails fast at construction rather than silently breaking at
+// request time. Call defaults before validate: the activity-throttle check
+// compares against the resolved idle timeout.
+func (c *authConfig) validate() error {
+	if err := c.cookie.Validate(); err != nil {
+		return err
+	}
+	// The persisted last-activity timestamp is refreshed at most once per
+	// throttle window, so it lags real activity by up to that window. A
+	// throttle at or above the idle timeout therefore lets ValidateSession
+	// expire sessions that are still actively in use. A zero throttle (the
+	// default) disables throttling and is always valid.
+	if c.activityThrottle > 0 && c.activityThrottle >= c.idleTimeout {
+		return fmt.Errorf("auth: activity throttle (%s) must be less than the idle timeout (%s)", c.activityThrottle, c.idleTimeout)
+	}
+	return nil
 }
 
 // WithLogger sets the logger for debug/warning output.
@@ -78,6 +99,12 @@ func WithAbsTimeout(d time.Duration) Option {
 // once per d per session hash, coalescing the high-frequency writes that would
 // otherwise hit the store on every request. The write remains best-effort
 // (errors are logged, never fatal).
+//
+// d must be less than the configured idle timeout (ideally much less): because
+// the persisted LastActivity is only refreshed once per window, it lags real
+// activity by up to d, so a throttle >= the idle timeout can cause
+// ValidateSession to expire sessions that are actively in use. The
+// constructors reject such a configuration with an error.
 func WithActivityThrottle(d time.Duration) Option {
 	return func(c *authConfig) { c.activityThrottle = d }
 }

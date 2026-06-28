@@ -127,3 +127,61 @@ func TestCheckBreachedPassword_no_match(t *testing.T) {
 		t.Error("no-match treated as breach")
 	}
 }
+
+type breachStubTransport struct {
+	err    error
+	status int
+}
+
+func (rt breachStubTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	if rt.err != nil {
+		return nil, rt.err
+	}
+	return &http.Response{StatusCode: rt.status, Body: http.NoBody, Header: make(http.Header)}, nil
+}
+
+func TestCheckBreachedPassword_failsOpenOnUpstreamFailure(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name      string
+		transport http.RoundTripper
+	}{
+		{"transport error", breachStubTransport{err: fmt.Errorf("dial tcp: connection refused")}},
+		{"500 status", breachStubTransport{status: http.StatusInternalServerError}},
+		{"429 status", breachStubTransport{status: http.StatusTooManyRequests}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			client := &http.Client{Transport: tc.transport}
+			breached, err := CheckBreachedPassword(context.Background(), client, "any-password-value")
+			if err != nil {
+				t.Errorf("CheckBreachedPassword(%s) error = %v, want nil (fail open)", tc.name, err)
+			}
+			if breached {
+				t.Errorf("CheckBreachedPassword(%s) = true, want false (fail open)", tc.name)
+			}
+		})
+	}
+}
+
+func TestCheckBreachedPassword_skipsMalformedCountLine(t *testing.T) {
+	t.Parallel()
+	password := "Some-Password-99"
+	hash := sha1.Sum([]byte(password))
+	hexStr := fmt.Sprintf("%X", hash)
+	prefix, suffix := hexStr[:5], hexStr[5:]
+
+	// The one line matching our suffix carries a non-numeric count, so the
+	// parser must skip it and report not-breached (never error, never breach).
+	body := suffix + ":not-a-number\n"
+	client := newHibpFake(t, map[string]string{prefix: body})
+
+	breached, err := CheckBreachedPassword(context.Background(), client, password)
+	if err != nil {
+		t.Fatalf("CheckBreachedPassword error = %v, want nil", err)
+	}
+	if breached {
+		t.Error("malformed count treated as a breach, want not-breached")
+	}
+}

@@ -38,7 +38,8 @@ func (m *MemStore) GetSessionByHash(_ context.Context, tokenHash string) (*auth.
 	if !ok {
 		return nil, nil
 	}
-	return s, nil
+	cp := *s
+	return &cp, nil
 }
 
 // GetUserByID returns the user with the given id, or (nil, nil) if absent.
@@ -49,7 +50,8 @@ func (m *MemStore) GetUserByID(_ context.Context, id int64) (*auth.User, error) 
 	if !ok {
 		return nil, nil
 	}
-	return u, nil
+	cp := *u
+	return &cp, nil
 }
 
 // GetAPIKeyByHash returns the API key stored under hash, or (nil, nil) if absent.
@@ -60,7 +62,8 @@ func (m *MemStore) GetAPIKeyByHash(_ context.Context, hash string) (*auth.Key, e
 	if !ok {
 		return nil, nil
 	}
-	return k, nil
+	cp := *k
+	return &cp, nil
 }
 
 // UpdateSessionActivity sets LastActivity to now for the session identified by
