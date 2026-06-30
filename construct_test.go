@@ -46,6 +46,23 @@ func TestNewSessionVerifier_rejects_throttle_not_less_than_idle(t *testing.T) {
 	}
 }
 
+func TestNewSessionVerifier_rejects_negative_idle_timeout(t *testing.T) {
+	t.Parallel()
+	// defaults() substitutes the package default only for a zero timeout, so a
+	// negative one would survive to request time and expire every session
+	// immediately. Construction must reject it.
+	if _, err := NewSessionVerifier(newFakeSessionStore(), WithIdleTimeout(-time.Hour)); err == nil {
+		t.Fatal("NewSessionVerifier(negative idle timeout) error = nil, want non-nil")
+	}
+}
+
+func TestNewSessionVerifier_rejects_negative_abs_timeout(t *testing.T) {
+	t.Parallel()
+	if _, err := NewSessionVerifier(newFakeSessionStore(), WithAbsTimeout(-time.Hour)); err == nil {
+		t.Fatal("NewSessionVerifier(negative absolute timeout) error = nil, want non-nil")
+	}
+}
+
 func TestNewAuthenticator_rejects_invalid_cookie_config(t *testing.T) {
 	t.Parallel()
 	// A __Host- posture with a Domain is rejected by browsers; fail fast.
@@ -58,5 +75,14 @@ func TestNewAuthenticator_accepts_default_config(t *testing.T) {
 	t.Parallel()
 	if _, err := NewAuthenticator(newFakeSessionStore()); err != nil {
 		t.Fatalf("NewAuthenticator(defaults) error = %v, want nil", err)
+	}
+}
+
+func TestNewAuthenticator_rejects_negative_idle_timeout(t *testing.T) {
+	t.Parallel()
+	// Confirms the positivity check is enforced through the Authenticator
+	// constructor too, not just NewSessionVerifier.
+	if _, err := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(-time.Second)); err == nil {
+		t.Fatal("NewAuthenticator(negative idle timeout) error = nil, want non-nil")
 	}
 }
