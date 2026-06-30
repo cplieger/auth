@@ -46,6 +46,18 @@ func (c *authConfig) validate() error {
 	if err := c.cookie.Validate(); err != nil {
 		return err
 	}
+	// Timeouts must be positive. defaults() substitutes the package defaults
+	// only for a zero value, so a negative duration passed via WithIdleTimeout
+	// or WithAbsTimeout would otherwise survive to request time — where a
+	// negative idle timeout makes every session expire immediately
+	// (now.Sub(lastActivity) > negative is always true), a silently broken
+	// authenticator. Fail fast at construction instead.
+	if c.idleTimeout <= 0 {
+		return fmt.Errorf("auth: idle timeout must be positive, got %s", c.idleTimeout)
+	}
+	if c.absTimeout <= 0 {
+		return fmt.Errorf("auth: absolute timeout must be positive, got %s", c.absTimeout)
+	}
 	// The persisted last-activity timestamp is refreshed at most once per
 	// throttle window, so it lags real activity by up to that window. A
 	// throttle at or above the idle timeout therefore lets ValidateSession
