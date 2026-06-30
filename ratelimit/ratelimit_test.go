@@ -1155,3 +1155,72 @@ func TestRateLimiter_empty_ip_account_dimension_still_blocks(t *testing.T) {
 		t.Errorf("ipWindows = %d, want 0 (empty ip must never create an IP window)", ipCount)
 	}
 }
+
+func TestRateLimiter_zeroIPWindowNormalizedSoLimitStillBlocks(t *testing.T) {
+	t.Parallel()
+	// A zero IPWindow is non-positive, so normalizeConfig must replace it with
+	// the default window. Left at zero, the cutoff equals now and every recorded
+	// attempt is treated as in-window with a zero retry-after, so the IP limit
+	// can never block. Recording up to the limit and then checking Allow proves
+	// the window was normalized: the request is denied only because the recorded
+	// attempts are still counted within a positive window.
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       3,
+		IPWindow:      0,
+		AcctLimit:     100,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    100,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	for range cfg.IPLimit {
+		rl.Record("10.0.0.1", "")
+	}
+
+	allowed, retryAfter := rl.Allow("10.0.0.1", "")
+	if allowed {
+		t.Fatal("Allow at the IP limit = true, want false (zero IPWindow must normalize to the default so the limit still applies)")
+	}
+	if retryAfter <= 0 {
+		t.Errorf("retryAfter = %v, want > 0 when blocked", retryAfter)
+	}
+}
+
+func TestRateLimiter_zeroMaxEntriesNormalizedSoDistinctKeysCoexist(t *testing.T) {
+	t.Parallel()
+	// A zero MaxEntries is non-positive, so normalizeConfig must replace it with
+	// the default. Left at zero, the entry cap is reached on every new key, so
+	// recording a second IP evicts the first -- clearing an already-blocked IP's
+	// window and letting it through again. With the cap normalized, the two IPs
+	// coexist and the first stays blocked.
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       3,
+		IPWindow:      time.Hour,
+		AcctLimit:     100,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    0,
+	}
+	rl := NewRateLimiter(context.Background(), cfg)
+	defer rl.Stop()
+	rl.nowFunc = func() time.Time { return now }
+
+	for range cfg.IPLimit {
+		rl.Record("10.0.0.1", "")
+	}
+	if allowed, _ := rl.Allow("10.0.0.1", ""); allowed {
+		t.Fatal("precondition: first IP should be blocked at its limit")
+	}
+
+	// Recording a different IP must not evict the already-blocked one.
+	rl.Record("10.0.0.2", "")
+
+	if allowed, _ := rl.Allow("10.0.0.1", ""); allowed {
+		t.Fatal("first IP allowed after a different IP was recorded; zero MaxEntries must normalize to the default so distinct keys coexist")
+	}
+}
