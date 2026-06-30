@@ -143,3 +143,43 @@ func TestHasher_CompatibleWithPackageFunctions(t *testing.T) {
 		t.Fatal("expected Hasher to verify package-level hash")
 	}
 }
+
+func TestHasher_differentPeppersProduceIncompatibleHashes(t *testing.T) {
+	t.Parallel()
+	// The pepper is HMAC-mixed into the password before Argon2, so two hashers
+	// configured with different peppers must derive different keys for the same
+	// password: a hash made under one pepper verifies under its own pepper but
+	// must NOT verify under a different one. This pins that the pepper actually
+	// participates in the derived hash rather than being silently dropped.
+	params := Argon2Params{Memory: 2048, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
+	h1, err := NewHasher(params, WithPepper([]byte("pepper-one")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, err := NewHasher(params, WithPepper([]byte("pepper-two")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const password = "correct horse battery staple"
+	hash1, err := h1.Hash(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ok, err := h1.Verify(password, hash1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("hash did not verify under its own pepper")
+	}
+
+	ok, err = h2.Verify(password, hash1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("hash verified under a different pepper; the pepper is not affecting the derived key")
+	}
+}
