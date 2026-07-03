@@ -1,6 +1,6 @@
 # Security assurance case — auth
 
-This extends the fleet-wide
+This extends the shared
 [default assurance case](https://github.com/cplieger/.github/blob/main/assurance-case.md)
 with the threat model specific to `auth`. Read that document first for the
 shared posture (CI scanning, supply chain, fuzzing, residual risks).
@@ -42,7 +42,7 @@ OIDC uses PKCE. No deprecated primitives (no MD5/SHA-1 for security purposes).
 - The library cannot enforce that consumers wire it correctly (e.g., actually
   call the verifier, set secure cookie flags); correct integration is the
   consumer's responsibility and is documented in the README.
-- No independent third-party cryptographic audit (see the fleet default case).
+- No independent third-party cryptographic audit (see the shared default case).
 
 Report vulnerabilities privately per
 [SECURITY.md](https://github.com/cplieger/.github/blob/main/SECURITY.md).
