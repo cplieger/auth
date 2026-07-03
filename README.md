@@ -2,7 +2,6 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/cplieger/auth.svg)](https://pkg.go.dev/github.com/cplieger/auth)
 [![Go version](https://img.shields.io/github/go-mod/go-version/cplieger/auth)](https://github.com/cplieger/auth/blob/main/go.mod)
-[![Go Report Card](https://goreportcard.com/badge/github.com/cplieger/auth)](https://goreportcard.com/report/github.com/cplieger/auth)
 [![Test coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/cplieger/auth/badges/coverage.json)](https://github.com/cplieger/auth/actions/workflows/coverage.yml)
 [![Mutation](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/cplieger/auth/badges/mutation.json)](https://github.com/cplieger/auth/issues?q=label%3Agremlins-tracker)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13199/badge)](https://www.bestpractices.dev/projects/13199)
@@ -205,7 +204,7 @@ All in the `github.com/cplieger/auth/webauthn` subpackage:
 
 ### `auth/store`
 
-Composite interface `store.Composite` (renamed from `store.AuthStore` to disambiguate from `auth.AuthStore` in middleware.go). Consumers referencing `store.AuthStore` should update their alias target to `store.Composite`.
+Composite interface `store.Composite` (formerly `store.AuthStore`).
 
 ### `auth/ratelimit`
 
@@ -249,6 +248,12 @@ The following features are intentionally out of scope. Each has a documented rat
 | WebAuthn credential filtering (AAGUID) | Enterprise policy. Consumer can use go-webauthn's filtering directly.                                                    |
 | Passkey well-known endpoints           | Browser/credential-manager concern, not server-auth-library concern.                                                     |
 | CSRF middleware (full HTTP layer)      | Library provides `CSRFToken`/`VerifyCSRFToken` primitives; full middleware is HTTP-framework-specific.                   |
+
+## Disclaimer
+
+This project is built with care and follows security best practices, but it is intended for personal / self-hosted use. No guarantees of fitness for production environments. Use at your own risk.
+
+This project was built with AI-assisted tooling using [Claude Opus](https://www.anthropic.com/claude) and [Kiro](https://kiro.dev). The human maintainer defines architecture, supervises implementation, and makes all final decisions.
 
 ## License
 
