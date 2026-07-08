@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/cplieger/auth"
+	"github.com/cplieger/auth/v2"
 	"pgregory.net/rapid"
 )
 

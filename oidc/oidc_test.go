@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cplieger/auth"
+	"github.com/cplieger/auth/v2"
 	"golang.org/x/oauth2"
 	"pgregory.net/rapid"
 )

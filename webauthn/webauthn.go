@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cplieger/auth"
+	"github.com/cplieger/auth/v2"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 )
