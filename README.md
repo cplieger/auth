@@ -18,7 +18,7 @@ Dependencies: `golang.org/x/crypto`, `github.com/go-webauthn/webauthn`, `github.
 ## Install
 
 ```sh
-go get github.com/cplieger/auth@latest
+go get github.com/cplieger/auth/v2@latest
 ```
 
 ## Usage
@@ -31,7 +31,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cplieger/auth"
+	"github.com/cplieger/auth/v2"
 )
 
 func main() {
@@ -166,7 +166,7 @@ if err != nil {
 
 ### WebAuthn
 
-All in the `github.com/cplieger/auth/webauthn` subpackage:
+All in the `github.com/cplieger/auth/v2/webauthn` subpackage:
 
 - `webauthn.NewWebAuthn(rpID, rpDisplayName, rpOrigins) (*webauthn.WebAuthn, error)` — WebAuthn setup (enforced 5-minute ceremony timeout)
 - `webauthn.NewWebAuthnUser(user, creds) (*webauthn.User, error)` — adapt `auth.User` + credentials to the go-webauthn `User` interface
@@ -197,8 +197,8 @@ All in the `github.com/cplieger/auth/webauthn` subpackage:
 - `WithVerifiers(vs []CredentialVerifier)` — override the default verifier chain
 - `WithActivityThrottle(d time.Duration)` — throttle `UpdateSessionActivity` writes (see Configuration)
 - `CredentialVerifier` — interface for pluggable credential verifiers
-- `SessionStore` / `webauthn.Store` (subpackage `github.com/cplieger/auth/webauthn`) — interfaces for consumer to implement
-- `store.Composite` — composite interface (subpackage `github.com/cplieger/auth/store`)
+- `SessionStore` / `webauthn.Store` (subpackage `github.com/cplieger/auth/v2/webauthn`) — interfaces for consumer to implement
+- `store.Composite` — composite interface (subpackage `github.com/cplieger/auth/v2/store`)
 
 ## Subpackages
 

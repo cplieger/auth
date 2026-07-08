@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cplieger/auth"
+	"github.com/cplieger/auth/v2"
 )
 
 // MemStore is an in-memory implementation of auth interfaces for testing.

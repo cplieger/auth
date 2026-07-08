@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/cplieger/auth"
+	"github.com/cplieger/auth/v2"
 )
 
 // Composite is the composite store interface implemented by the
