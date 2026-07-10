@@ -2,16 +2,14 @@ package webauthn
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"log/slog"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/cplieger/auth/v2"
+	"github.com/cplieger/auth/v2/internal/capture"
 	"github.com/go-webauthn/webauthn/protocol"
 	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
 )
@@ -337,52 +335,10 @@ func TestAPICredentialToWebAuthn_restores_attestation_from_raw(t *testing.T) {
 	}
 }
 
-// recordingHandler captures every slog.Record regardless of level.
-type recordingHandler struct {
-	records []slog.Record
-	mu      sync.Mutex
-}
-
-func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.records = append(h.records, r.Clone())
-	return nil
-}
-
-func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
-
-func (h *recordingHandler) countMsg(sub string) int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	n := 0
-	for _, r := range h.records {
-		if bytes.Contains([]byte(r.Message), []byte(sub)) {
-			n++
-		}
-	}
-	return n
-}
-
-// withCapturedDefaultLogger temporarily swaps slog's default logger for a
-// capturing handler and restores it on cleanup. APICredentialToWebAuthn logs
-// via the package-global slog, so these tests cannot run in parallel.
-func withCapturedDefaultLogger(t *testing.T) *recordingHandler {
-	t.Helper()
-	h := &recordingHandler{}
-	orig := slog.Default()
-	slog.SetDefault(slog.New(h))
-	t.Cleanup(func() { slog.SetDefault(orig) })
-	return h
-}
-
 // An empty RawAttestation is skipped silently: APICredentialToWebAuthn logs no
 // corrupted-attestation warning when there is nothing to unmarshal.
 func TestAPICredentialToWebAuthn_empty_raw_attestation_no_warning(t *testing.T) {
-	h := withCapturedDefaultLogger(t)
+	h := capture.Default(t)
 
 	cred := &auth.PasskeyCredential{
 		CredentialID: []byte{1},
@@ -392,7 +348,7 @@ func TestAPICredentialToWebAuthn_empty_raw_attestation_no_warning(t *testing.T) 
 
 	_ = APICredentialToWebAuthn(cred)
 
-	if n := h.countMsg("corrupted attestation"); n != 0 {
+	if n := h.CountMsg("corrupted attestation"); n != 0 {
 		t.Errorf("APICredentialToWebAuthn(empty RawAttestation) logged %d corrupted-attestation warnings, want 0", n)
 	}
 }
@@ -400,7 +356,7 @@ func TestAPICredentialToWebAuthn_empty_raw_attestation_no_warning(t *testing.T) 
 // A non-empty but malformed RawAttestation is reported once as a
 // corrupted-attestation warning and otherwise ignored.
 func TestAPICredentialToWebAuthn_invalid_raw_attestation_warns(t *testing.T) {
-	h := withCapturedDefaultLogger(t)
+	h := capture.Default(t)
 
 	cred := &auth.PasskeyCredential{
 		CredentialID:   []byte{1},
@@ -411,7 +367,7 @@ func TestAPICredentialToWebAuthn_invalid_raw_attestation_warns(t *testing.T) {
 
 	_ = APICredentialToWebAuthn(cred)
 
-	if n := h.countMsg("corrupted attestation"); n != 1 {
+	if n := h.CountMsg("corrupted attestation"); n != 1 {
 		t.Errorf("APICredentialToWebAuthn(invalid RawAttestation) logged %d corrupted-attestation warnings, want 1", n)
 	}
 }
