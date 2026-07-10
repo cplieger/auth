@@ -3,46 +3,13 @@ package auth
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
-	"sync"
 	"testing"
 	"time"
+
+	"github.com/cplieger/auth/v2/internal/capture"
 )
-
-// recordingHandler captures every slog.Record regardless of level so tests can
-// assert on the verifier's logging decisions.
-type recordingHandler struct {
-	records []slog.Record
-	mu      sync.Mutex
-}
-
-func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.records = append(h.records, r.Clone())
-	return nil
-}
-
-func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
-
-// countMsg returns how many captured records have a message containing sub.
-func (h *recordingHandler) countMsg(sub string) int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	n := 0
-	for _, r := range h.records {
-		if strings.Contains(r.Message, sub) {
-			n++
-		}
-	}
-	return n
-}
 
 // newVerifierRequest builds a request carrying the session cookie for the
 // default cookie configuration.
@@ -80,15 +47,15 @@ func TestSessionVerifier_Verify_successfulActivityUpdate_logsNoWarning(t *testin
 
 	// A live session whose activity update succeeds must not log the
 	// activity-update warning.
-	h := &recordingHandler{}
+	logger, h := capture.New()
 	store, plaintext := newVerifierSession(t, true)
-	v := mustSessionVerifier(t, store, WithLogger(slog.New(h)), WithCookie(DefaultCookieConfig()))
+	v := mustSessionVerifier(t, store, WithLogger(logger), WithCookie(DefaultCookieConfig()))
 
 	gotUser, _, err := v.Verify(context.Background(), newVerifierRequest(t, plaintext))
 	if err != nil || gotUser == nil {
 		t.Fatalf("Verify() = (%v, %v), want a valid user and nil error", gotUser, err)
 	}
-	if n := h.countMsg("session activity update failed"); n != 0 {
+	if n := h.CountMsg("session activity update failed"); n != 0 {
 		t.Errorf("Verify() with successful activity update logged %d activity-update warnings, want 0", n)
 	}
 }
@@ -98,9 +65,9 @@ func TestSessionVerifier_Verify_disabledUser_refusesAndLogs(t *testing.T) {
 
 	// A disabled user with an otherwise-valid session must be refused, and the
 	// attempt must be logged at debug level.
-	h := &recordingHandler{}
+	logger, h := capture.New()
 	store, plaintext := newVerifierSession(t, false)
-	v := mustSessionVerifier(t, store, WithLogger(slog.New(h)), WithCookie(DefaultCookieConfig()))
+	v := mustSessionVerifier(t, store, WithLogger(logger), WithCookie(DefaultCookieConfig()))
 
 	gotUser, _, err := v.Verify(context.Background(), newVerifierRequest(t, plaintext))
 	if err != nil {
@@ -109,7 +76,7 @@ func TestSessionVerifier_Verify_disabledUser_refusesAndLogs(t *testing.T) {
 	if gotUser != nil {
 		t.Fatalf("Verify() = %v, want nil (disabled user)", gotUser)
 	}
-	if n := h.countMsg("disabled user attempted session auth"); n != 1 {
+	if n := h.CountMsg("disabled user attempted session auth"); n != 1 {
 		t.Errorf("Verify() with disabled user logged %d disabled-user debug records, want 1", n)
 	}
 }
@@ -388,9 +355,9 @@ func TestSessionVerifier_Verify_activityUpdateError_stillAuthenticates(t *testin
 		sess: &Session{TokenHash: "h", UserID: 1, CreatedAt: now, LastActivity: now},
 		user: &User{ID: 1, Username: "alice", Role: RoleUser, Enabled: true},
 	}
-	h := &recordingHandler{}
+	logger, h := capture.New()
 	cfg := DefaultCookieConfig()
-	v := mustSessionVerifier(t, store, WithCookie(cfg), WithLogger(slog.New(h)))
+	v := mustSessionVerifier(t, store, WithCookie(cfg), WithLogger(logger))
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: cfg.EffectiveName(), Value: "token"})
 
@@ -398,7 +365,7 @@ func TestSessionVerifier_Verify_activityUpdateError_stillAuthenticates(t *testin
 	if err != nil || user == nil {
 		t.Fatalf("Verify() = (%v, %v), want a user and nil error despite the activity-write failure", user, err)
 	}
-	if n := h.countMsg("session activity update failed"); n != 1 {
+	if n := h.CountMsg("session activity update failed"); n != 1 {
 		t.Errorf("Verify() logged %d activity-update warnings, want 1", n)
 	}
 }
