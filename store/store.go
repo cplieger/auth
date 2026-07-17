@@ -1,5 +1,10 @@
-// Package store defines the composite store interface used by the
-// authentication subsystem and implemented by persistence layers.
+// Package store defines the composite persistence contract for the
+// authentication subsystem. It is the published implement-me SPI for the
+// consumer-built handler layer: the auth library's own mechanisms consume only
+// the narrow verifier interfaces (auth.SessionVerifierStore,
+// auth.APIKeyVerifierStore), while this package names the complete surface —
+// users, sessions, passkeys, API keys, and OIDC state — that a consumer's
+// storage layer implements and its HTTP handlers call.
 package store
 
 import (
@@ -9,8 +14,13 @@ import (
 	"github.com/cplieger/auth/v2"
 )
 
-// Composite is the composite store interface implemented by the
-// concrete persistence layer and consumed by auth.
+// Composite is the full persistence contract implemented by the consumer's
+// storage layer. No auth library code consumes it: its method set mirrors the
+// library's ceremonies (GetUserByOIDCSub is oidc.ResolveUser's lookup key,
+// UpdatePasskeyAfterLogin is the post-login credential custody,
+// ConsumeOIDCState encodes single-use state), so implementing it end-to-end
+// equips a consumer's handler layer for every library flow. Consumers needing
+// less implement the narrow role interfaces below instead.
 type Composite interface {
 	UserStore
 	SessionPersister

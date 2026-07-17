@@ -88,6 +88,8 @@ All configuration is via functional options and function parameters — no impor
 - `WithBypass(fn)`: bypass function for development (synthetic admin user)
 - `WithVerifiers(vs []CredentialVerifier)`: override the default verifier chain. When set, `Authenticate` iterates the supplied chain instead of the hardcoded default (`SessionVerifier` + `APIKeyVerifier`).
 - `WithActivityThrottle(d time.Duration)`: when `d>0`, `SessionVerifier` maintains a per-hash last-write map and calls `UpdateSessionActivity` at most once per `d` per hash. `d==0` (default) preserves the current write-on-every-request behavior. `d` must be less than the idle timeout, or construction returns an error (the persisted last-activity lags by up to `d`, so a throttle at or above the idle timeout would expire active sessions).
+- `WithUnauthorizedResponse(fn)`: replace `RequireAuth`'s default unauthorized response (302 to the login path for browsers, 401 JSON otherwise) with your own writer. The hook owns both branches; call `IsBrowserRequest` inside it to keep a redirect path.
+- `WithTimeoutSource(fn)`: resolve the idle/absolute session timeouts per verification from a callback (for hot-reloadable config) instead of the static `WithIdleTimeout`/`WithAbsTimeout` values. Non-positive callback values fall back to the static values, and the activity throttle is clamped to at most half the resolved idle timeout so a shrunken idle can never expire actively-used sessions through write throttling.
 - `NewHasher(params, ...HasherOption)`: configurable Argon2id parameters; use `WithPepper([]byte)` for HMAC peppering
 - `GenerateAPIKey(prefix)`: pass your key prefix (e.g. `"ak_"`)
 - `ValidatePasswordContext(password, username, forbiddenWords)`: pass app-specific forbidden words
@@ -171,6 +173,7 @@ All in the `github.com/cplieger/auth/v2/webauthn` subpackage:
 - `webauthn.NewWebAuthn(rpID, rpDisplayName, rpOrigins) (*webauthn.WebAuthn, error)` — WebAuthn setup (enforced 5-minute ceremony timeout)
 - `webauthn.NewWebAuthnUser(user, creds) (*webauthn.User, error)` — adapt `auth.User` + credentials to the go-webauthn `User` interface
 - `webauthn.BeginRegistration / FinishRegistration / BeginLogin / FinishLogin` — WebAuthn ceremonies
+- `webauthn.CompleteLogin(ctx, wa, store, sessionData, r) (*auth.User, *webauthn.Credential, error)` — store-backed login completion: resolves the asserting user from the user handle, verifies the assertion, and persists sign-count/flag custody (including CloneWarning). Best-effort custody write; the caller still owns account-status policy (check `User.Enabled`) and session creation.
 - `webauthn.BeginConditionalLogin(wa) (*protocol.CredentialAssertion, *webauthn.SessionData, error)` — conditional mediation (autofill UI)
 
 ### OIDC
@@ -196,8 +199,10 @@ All in the `github.com/cplieger/auth/v2/webauthn` subpackage:
 - `IsBrowserRequest(r) bool` — detect browser vs API client
 - `WithVerifiers(vs []CredentialVerifier)` — override the default verifier chain
 - `WithActivityThrottle(d time.Duration)` — throttle `UpdateSessionActivity` writes (see Configuration)
+- `WithUnauthorizedResponse(fn)` — custom unauthorized response for `RequireAuth` (see Configuration)
+- `WithTimeoutSource(fn)` — per-request idle/absolute timeout resolution for hot-reloadable config (see Configuration)
 - `CredentialVerifier` — interface for pluggable credential verifiers
-- `SessionStore` / `webauthn.Store` (subpackage `github.com/cplieger/auth/v2/webauthn`) — interfaces for consumer to implement
+- `SessionStore` / `webauthn.Store` (subpackage `github.com/cplieger/auth/v2/webauthn`) — interfaces for consumer to implement; `webauthn.Store` is the contract `webauthn.CompleteLogin` consumes
 - `store.Composite` — composite interface (subpackage `github.com/cplieger/auth/v2/store`)
 
 ## Subpackages
