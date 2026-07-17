@@ -24,7 +24,12 @@ import (
 // CeremonyTimeout is the maximum duration a user has to complete an auth ceremony.
 const CeremonyTimeout = 5 * time.Minute
 
-// Store is the narrow interface consumed by WebAuthn/passkey handlers.
+// Store is the narrow store interface consumed by [CompleteLogin]: user and
+// credential lookup to resolve the asserting account from its user handle,
+// and the post-login credential-custody write. Any implementation of
+// store.Composite satisfies it. Consumers composing the lower-level ceremony
+// helpers ([BeginLogin], [FinishLogin]) with their own user finder do not
+// need it.
 type Store interface {
 	GetPasskeysByUserID(ctx context.Context, userID int64) ([]auth.PasskeyCredential, error)
 	UpdatePasskeyAfterLogin(ctx context.Context, credID []byte, signCount uint32, flags auth.PasskeyFlags) error
@@ -312,4 +317,78 @@ func BeginConditionalLogin(wa *webauthn.WebAuthn) (*protocol.CredentialAssertion
 // FinishLogin completes a WebAuthn assertion ceremony (discoverable login).
 func FinishLogin(wa *webauthn.WebAuthn, sessionData *webauthn.SessionData, response *http.Request, userFinder func(rawID, userHandle []byte) (webauthn.User, error)) (webauthn.User, *webauthn.Credential, error) {
 	return wa.FinishPasskeyLogin(userFinder, *sessionData, response)
+}
+
+// CompleteLogin completes a discoverable (passkey) login ceremony against the
+// store: it resolves the asserting user and registered credentials from the
+// assertion's user handle, verifies the assertion response, and persists the
+// post-login credential custody (sign count and authenticator flags, the
+// cloned-authenticator detection state). It composes [FinishLogin] with a
+// store-backed user finder; a consumer needing a custom finder or custody
+// policy uses FinishLogin directly.
+//
+// The custody write is best-effort: a store failure is logged at Warn and does
+// not fail the login (sign-count bookkeeping is clone *detection*, not part of
+// assertion verification). The returned user is the account as stored — the
+// caller owns account-status policy and MUST check User.Enabled (and any
+// app-specific state) before creating a session. A ceremony failure caused by
+// a credential deleted server-side surfaces as a wrapped
+// [protocol.ErrorUnknownCredential], matchable with errors.As so callers can
+// signal the client to forget the stale passkey.
+func CompleteLogin(ctx context.Context, wa *webauthn.WebAuthn, store Store, sessionData *webauthn.SessionData, r *http.Request) (*auth.User, *webauthn.Credential, error) {
+	resolved, cred, err := FinishLogin(wa, sessionData, r, storeUserFinder(ctx, store))
+	if err != nil {
+		return nil, nil, fmt.Errorf("webauthn: assertion ceremony failed: %w", err)
+	}
+	user, ok := resolved.(*User)
+	if !ok || user.AuthUser == nil {
+		// Unreachable with storeUserFinder (which only returns *User), kept as
+		// a fail-closed guard against upstream contract drift.
+		return nil, nil, errors.New("webauthn: ceremony resolved an unexpected user type")
+	}
+	persistLoginCustody(ctx, store, cred)
+	return user.AuthUser, cred, nil
+}
+
+// storeUserFinder returns the credential-lookup callback the assertion
+// ceremony uses to resolve the asserting user and their registered passkeys
+// from the store. The returned errors are deliberately generic so an
+// assertion response never reveals whether a particular user handle exists.
+func storeUserFinder(ctx context.Context, store Store) func(rawID, userHandle []byte) (webauthn.User, error) {
+	return func(_, userHandle []byte) (webauthn.User, error) {
+		userID, _ := binary.Varint(userHandle)
+		if userID <= 0 {
+			return nil, errors.New("invalid user handle")
+		}
+		user, err := store.GetUserByID(ctx, userID)
+		if err != nil || user == nil {
+			return nil, errors.New("user not found")
+		}
+		creds, err := store.GetPasskeysByUserID(ctx, user.ID)
+		if err != nil {
+			return nil, errors.New("get passkeys failed")
+		}
+		return NewWebAuthnUser(user, creds)
+	}
+}
+
+// persistLoginCustody writes the post-login credential custody: the
+// authenticator's sign count and flags, including CloneWarning — the signal
+// go-webauthn raises when a sign count regresses (a cloned-authenticator
+// indicator) that must survive into storage to be visible to later ceremonies
+// and audits. Best-effort by design; a failure is logged at Warn and never
+// fails the login.
+func persistLoginCustody(ctx context.Context, store Store, cred *webauthn.Credential) {
+	err := store.UpdatePasskeyAfterLogin(ctx, cred.ID, cred.Authenticator.SignCount, auth.PasskeyFlags{
+		UserPresent:    cred.Flags.UserPresent,
+		UserVerified:   cred.Flags.UserVerified,
+		BackupEligible: cred.Flags.BackupEligible,
+		BackupState:    cred.Flags.BackupState,
+		CloneWarning:   cred.Authenticator.CloneWarning,
+	})
+	if err != nil {
+		slog.Warn("webauthn: post-login credential update failed",
+			"credential_id", hex.EncodeToString(cred.ID[:min(8, len(cred.ID))]),
+			"error", err)
+	}
 }
