@@ -7,8 +7,10 @@ import (
 	"strings"
 )
 
-// CookiePosture determines the cookie security posture at deploy time.
-// This is a DEPLOY-TIME decision, NOT per-request.
+// CookiePosture determines the cookie security posture. Every posture except
+// [PosturePerRequest] is a deploy-time decision with one stable cookie name;
+// PosturePerRequest selects the name and Secure flag per request from the
+// request scheme.
 type CookiePosture int
 
 const (
@@ -52,7 +54,9 @@ func (p CookiePosture) String() string {
 var _ fmt.Stringer = CookiePosture(0)
 
 // CookieConfig holds configurable cookie attributes for session cookies.
-// The posture is a deploy-time decision — ONE stable cookie name per deployment.
+// Under every posture except [PosturePerRequest] the deployment has ONE stable
+// cookie name; PosturePerRequest alternates between the __Host--prefixed and
+// bare forms of the configured base name per request scheme.
 type CookieConfig struct {
 	// Name is the base cookie name (without __Host- prefix).
 	// Default: "auth_session".

@@ -21,6 +21,9 @@ type APIKeyVerifier struct {
 }
 
 // NewAPIKeyVerifier creates an APIKeyVerifier with the given store and options.
+// Of the shared [Option] set it consults only [WithLogger]; every other option
+// (cookie, timeouts, throttle, bypass, hooks) configures session or
+// authenticator behavior this verifier does not have and is silently ignored.
 func NewAPIKeyVerifier(store APIKeyVerifierStore, opts ...Option) *APIKeyVerifier {
 	cfg := authConfig{}
 	for _, o := range opts {

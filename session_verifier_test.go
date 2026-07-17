@@ -132,7 +132,7 @@ func TestSessionVerifier_shouldWriteActivity_zeroThrottle_writesWithoutRecording
 		cfg:          authConfig{activityThrottle: 0},
 	}
 
-	if !v.shouldWriteActivity("hash", time.Now()) {
+	if !v.shouldWriteActivity("hash", time.Now(), DefaultIdleTimeout) {
 		t.Errorf("shouldWriteActivity(throttle=0) = false, want true")
 	}
 	if n := len(v.lastActivity); n != 0 {
@@ -153,7 +153,9 @@ func TestSessionVerifier_shouldWriteActivity_elapsedEqualsThrottle_writes(t *tes
 		cfg:          authConfig{activityThrottle: d},
 	}
 
-	if !v.shouldWriteActivity("hash", t0.Add(d)) {
+	// idle is 4*d so the idle/2 clamp is inactive and the raw window boundary
+	// is what this test pins.
+	if !v.shouldWriteActivity("hash", t0.Add(d), 4*d) {
 		t.Errorf("shouldWriteActivity(elapsed == throttle) = false, want true")
 	}
 }

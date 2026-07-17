@@ -14,7 +14,7 @@ var ErrUnauthenticated = errors.New("unauthenticated")
 
 // AuthStore is the composed interface needed by [Authenticator] — session lookup,
 // user lookup, and API key lookup.
-type AuthStore interface { //nolint:revive // stutters as auth.AuthStore but renaming would break consumers
+type AuthStore interface { //nolint:revive // stutters as auth.AuthStore; renaming a published type of this tagged module is a breaking API change
 	SessionReader
 	SessionActivityUpdater
 	UserReader
@@ -59,6 +59,7 @@ func NewAuthenticator(store AuthStore, opts ...Option) (*Authenticator, error) {
 		WithAbsTimeout(cfg.absTimeout),
 		WithCookie(cfg.cookie),
 		WithActivityThrottle(cfg.activityThrottle),
+		WithTimeoutSource(cfg.timeoutSource),
 	)
 	if err != nil {
 		return nil, err
@@ -103,17 +104,22 @@ func (a *Authenticator) Authenticate(r *http.Request) (*User, string, error) {
 }
 
 // RequireAuth checks authentication and returns the user. If not
-// authenticated, it writes the appropriate response (401 or redirect)
-// and returns ok=false.
+// authenticated, it writes the appropriate response and returns ok=false. The
+// default response is a 302 redirect to the login path for browser requests
+// and a 401 JSON envelope otherwise; a hook installed via
+// [WithUnauthorizedResponse] replaces both branches.
 func (a *Authenticator) RequireAuth(w http.ResponseWriter, r *http.Request) (*User, string, bool) {
 	user, sessHash, err := a.Authenticate(r)
 	if err != nil {
 		if !errors.Is(err, ErrUnauthenticated) {
 			a.logger().Warn("auth: authentication backend error", "error", err)
 		}
-		if IsBrowserRequest(r) {
+		switch {
+		case a.cfg.unauthorized != nil:
+			a.cfg.unauthorized(w, r)
+		case IsBrowserRequest(r):
 			http.Redirect(w, r, a.loginPath()+"?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
-		} else {
+		default:
 			writeUnauthorized(w, r)
 		}
 		return nil, "", false
