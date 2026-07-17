@@ -72,11 +72,15 @@ func (v *SessionVerifier) Verify(ctx context.Context, r *http.Request) (*User, s
 		return nil, "", nil
 	}
 	now := time.Now()
-	if verr := ValidateSession(sess, v.cfg.idleTimeout, v.cfg.absTimeout, now); verr != nil {
+	// Timeouts are resolved per verification so a WithTimeoutSource consumer's
+	// hot-reloaded values take effect immediately; without a source this is
+	// exactly the static configured pair.
+	idle, abs := v.cfg.resolveTimeouts()
+	if verr := ValidateSession(sess, idle, abs, now); verr != nil {
 		v.logger().Debug("auth: session rejected", "user_id", sess.UserID, "reason", verr)
 		return nil, "", nil
 	}
-	if v.shouldWriteActivity(hash, now) {
+	if v.shouldWriteActivity(hash, now, idle) {
 		if actErr := v.store.UpdateSessionActivity(ctx, hash, now); actErr != nil {
 			v.logger().Warn("auth: session activity update failed", "error", actErr)
 		}
@@ -100,7 +104,8 @@ func (v *SessionVerifier) Verify(ctx context.Context, r *http.Request) (*User, s
 const activityPruneThreshold = 1024
 
 // shouldWriteActivity reports whether a session-activity write should be issued
-// for the given session hash at time now.
+// for the given session hash at time now, given the idle timeout resolved for
+// this verification.
 //
 // When the configured throttle is 0 (the default), it always returns true,
 // preserving write-on-every-request behavior with no locking. When the
@@ -108,10 +113,23 @@ const activityPruneThreshold = 1024
 // concurrency-safe per-hash last-write map. The decision time is recorded as
 // the last-write time so concurrent callers within the same window collapse to
 // a single write.
-func (v *SessionVerifier) shouldWriteActivity(hash string, now time.Time) bool {
+//
+// The effective throttle is clamped to at most idle/2. Construction validates
+// throttle < idle only against the static configured idle timeout; a
+// WithTimeoutSource consumer can resolve a smaller idle at runtime, and an
+// unclamped throttle at or above it would let the persisted LastActivity lag
+// far enough for ValidateSession to expire sessions that are actively in use.
+// The clamp errs toward more writes — the safe direction.
+func (v *SessionVerifier) shouldWriteActivity(hash string, now time.Time, idle time.Duration) bool {
 	d := v.cfg.activityThrottle
 	if d <= 0 {
 		return true
+	}
+	if half := idle / 2; d > half {
+		d = half
+		if d <= 0 {
+			return true
+		}
 	}
 	v.activityMu.Lock()
 	defer v.activityMu.Unlock()

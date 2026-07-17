@@ -38,14 +38,10 @@ type Claims struct {
 	EmailVerified     bool   `json:"email_verified"`
 }
 
-// Config holds OIDC provider settings.
-type Config struct {
-	IssuerURL    string `json:"issuer_url" yaml:"issuer_url"`
-	ClientID     string `json:"client_id" yaml:"client_id"`
-	ClientSecret string `json:"-" yaml:"client_secret"`
-	RedirectURI  string `json:"redirect_uri" yaml:"redirect_uri"`
-	AutoRedirect bool   `json:"auto_redirect" yaml:"auto_redirect"`
-}
+// Config holds OIDC provider settings. It is an alias of [auth.OIDCConfig]
+// (the canonical definition), so a consumer holding the core type passes it to
+// [NewProvider] directly with no field-for-field conversion.
+type Config = auth.OIDCConfig
 
 // Provider wraps the coreos/go-oidc provider with PKCE support.
 type Provider struct {

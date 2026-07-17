@@ -3,6 +3,7 @@ package auth
 import (
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 )
 
@@ -19,12 +20,37 @@ type Option func(*authConfig)
 type authConfig struct {
 	logger           *slog.Logger
 	bypass           func() bool
+	unauthorized     func(http.ResponseWriter, *http.Request)
+	timeoutSource    func() (idle, abs time.Duration)
 	loginPath        string
 	verifiers        []CredentialVerifier
 	cookie           CookieConfig
 	idleTimeout      time.Duration
 	absTimeout       time.Duration
 	activityThrottle time.Duration
+}
+
+// resolveTimeouts returns the effective idle/absolute session timeouts for one
+// verification. Without a timeout source (the default) they are the static
+// configured values, resolved once at construction. With a source (see
+// [WithTimeoutSource]) the source is consulted per call, and each non-positive
+// value it returns falls back to the corresponding static configured value, so
+// a misbehaving source can never produce the always-expired sessions a
+// non-positive timeout would cause (the same hazard the constructors reject
+// for static values).
+func (c *authConfig) resolveTimeouts() (idle, abs time.Duration) {
+	idle, abs = c.idleTimeout, c.absTimeout
+	if c.timeoutSource == nil {
+		return idle, abs
+	}
+	di, da := c.timeoutSource()
+	if di > 0 {
+		idle = di
+	}
+	if da > 0 {
+		abs = da
+	}
+	return idle, abs
 }
 
 // defaults applies default values to unset fields.
@@ -82,6 +108,35 @@ func WithBypass(fn func() bool) Option {
 	return func(c *authConfig) { c.bypass = fn }
 }
 
+// WithUnauthorizedResponse sets the response written by
+// [Authenticator.RequireAuth] when a request is not authenticated, replacing
+// the default behavior (a 302 redirect to the login path for browser requests,
+// a 401 JSON envelope otherwise). The hook owns the entire unauthorized
+// response: it is called for browser and API requests alike, so a consumer
+// that wants to keep the browser redirect applies [IsBrowserRequest] itself.
+// A nil hook (the default) preserves the built-in behavior byte for byte.
+func WithUnauthorizedResponse(fn func(w http.ResponseWriter, r *http.Request)) Option {
+	return func(c *authConfig) { c.unauthorized = fn }
+}
+
+// WithTimeoutSource sets a callback that resolves the session idle and
+// absolute timeouts per verification, instead of the static values configured
+// via [WithIdleTimeout]/[WithAbsTimeout]. It exists for consumers whose
+// timeouts are hot-reloadable configuration: the default [SessionVerifier]
+// consults the source on every Verify, so a changed value takes effect without
+// reconstructing the verifier.
+//
+// Validation is per-resolution (a construction-time check cannot bind dynamic
+// values): a non-positive idle or absolute value returned by the source falls
+// back to the corresponding static configured value, and the activity throttle
+// (see [WithActivityThrottle]) is clamped to at most half the resolved idle
+// timeout, so a source that shrinks the idle timeout below the configured
+// throttle can never make the persisted LastActivity stale enough to expire a
+// session that is actively in use.
+func WithTimeoutSource(fn func() (idle, abs time.Duration)) Option {
+	return func(c *authConfig) { c.timeoutSource = fn }
+}
+
 // WithLoginPath sets the redirect target for unauthenticated browser requests.
 // Defaults to "/login".
 func WithLoginPath(path string) Option {
@@ -125,7 +180,9 @@ func WithActivityThrottle(d time.Duration) Option {
 // [Authenticator], replacing the default session + API-key chain. When the
 // provided slice is empty (or this option is not used), the default chain is
 // used. This lets consumers inject custom verifiers (e.g. a TOTP or
-// app-specific session verifier) without copying Authenticate/RequireAuth.
+// app-specific session verifier) without copying Authenticate; a consumer that
+// also needs its own unauthorized response pairs it with
+// [WithUnauthorizedResponse] to keep RequireAuth.
 func WithVerifiers(vs []CredentialVerifier) Option {
 	return func(c *authConfig) { c.verifiers = vs }
 }
