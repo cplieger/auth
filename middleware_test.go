@@ -562,21 +562,58 @@ func TestAuthenticate_bypass(t *testing.T) {
 func TestNewAuthenticator_bypass_logs_production_warning(t *testing.T) {
 	t.Parallel()
 
-	var withBypass strings.Builder
-	_ = mustAuthenticator(t, newFakeSessionStore(),
+	// Construction with a hook: one Info notice, never the WARN — an
+	// installed hook is routinely inactive (hot-reloadable dev flag that is
+	// off), and warning at boot would cry wolf on every start.
+	var active strings.Builder
+	a := mustAuthenticator(t, newFakeSessionStore(),
 		WithBypass(func() bool { return true }),
-		WithLogger(slog.New(slog.NewTextHandler(&withBypass, nil))),
+		WithLogger(slog.New(slog.NewTextHandler(&active, nil))),
 	)
-	if got := withBypass.String(); !strings.Contains(got, "authentication bypass is configured") || !strings.Contains(got, "level=WARN") {
-		t.Errorf("WithBypass did not emit the WARN production-safety warning; log = %q", got)
+	if got := active.String(); !strings.Contains(got, "bypass hook installed") || !strings.Contains(got, "level=INFO") {
+		t.Errorf("WithBypass construction did not emit the Info install notice; log = %q", got)
+	}
+	if got := active.String(); strings.Contains(got, "level=WARN") {
+		t.Errorf("WithBypass construction emitted a WARN before any request was granted; log = %q", got)
 	}
 
+	// First actually-granted request: the WARN fires exactly once.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	if _, _, err := a.Authenticate(req); err != nil {
+		t.Fatalf("Authenticate(bypass active) error = %v", err)
+	}
+	if got := active.String(); !strings.Contains(got, "authentication bypass is active") || !strings.Contains(got, "level=WARN") {
+		t.Errorf("first granted bypass did not emit the WARN production-safety warning; log = %q", got)
+	}
+	before := strings.Count(active.String(), "authentication bypass is active")
+	if _, _, err := a.Authenticate(req); err != nil {
+		t.Fatalf("Authenticate(bypass active, second) error = %v", err)
+	}
+	if after := strings.Count(active.String(), "authentication bypass is active"); after != before {
+		t.Errorf("second granted bypass duplicated the WARN (%d -> %d occurrences), want once per process", before, after)
+	}
+
+	// Installed but INACTIVE hook: requests authenticate normally and the
+	// WARN never fires.
+	var inactive strings.Builder
+	off := mustAuthenticator(t, newFakeSessionStore(),
+		WithBypass(func() bool { return false }),
+		WithLogger(slog.New(slog.NewTextHandler(&inactive, nil))),
+	)
+	if _, _, err := off.Authenticate(httptest.NewRequest(http.MethodGet, "/", nil)); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("Authenticate(bypass inactive) error = %v, want ErrUnauthenticated", err)
+	}
+	if got := inactive.String(); strings.Contains(got, "level=WARN") {
+		t.Errorf("inactive bypass hook emitted a WARN; log = %q", got)
+	}
+
+	// No hook at all: no bypass lines of either level.
 	var noBypass strings.Builder
 	_ = mustAuthenticator(t, newFakeSessionStore(),
 		WithLogger(slog.New(slog.NewTextHandler(&noBypass, nil))),
 	)
-	if got := noBypass.String(); strings.Contains(got, "authentication bypass is configured") {
-		t.Errorf("Authenticator without WithBypass emitted the bypass warning; log = %q", got)
+	if got := noBypass.String(); strings.Contains(got, "bypass") {
+		t.Errorf("Authenticator without WithBypass mentioned bypass in logs; log = %q", got)
 	}
 }
 

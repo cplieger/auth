@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 // ErrUnauthenticated is returned when no valid credential is found.
@@ -27,6 +28,11 @@ type Authenticator struct {
 	store            AuthStore
 	defaultVerifiers []CredentialVerifier
 	cfg              authConfig
+	// bypassWarned dedupes the loud production-safety warning: it fires on
+	// the FIRST request the bypass hook actually grants, not on construction
+	// (a hook is routinely installed but inactive — e.g. a hot-reloadable
+	// dev flag that is off — and warning then would cry wolf on every boot).
+	bypassWarned sync.Once
 }
 
 // NewAuthenticator creates an Authenticator with the given store and options.
@@ -47,7 +53,11 @@ func NewAuthenticator(store AuthStore, opts ...Option) (*Authenticator, error) {
 	}
 	a := &Authenticator{store: store, cfg: cfg}
 	if cfg.bypass != nil {
-		a.logger().Warn("auth: authentication bypass is configured; matching requests are granted synthetic admin access and must never be enabled in production")
+		// Installation alone is not bypass: the hook may be (and usually is)
+		// inactive. The WARN fires once, on the first actually-granted
+		// request (see Authenticate), so a warning in the log always means
+		// synthetic admin access WAS handed out.
+		a.logger().Info("auth: authentication bypass hook installed; requests are bypassed only while it reports true")
 	}
 	// Build the default chain once (avoids per-request allocation). It is only
 	// consulted when no explicit chain was injected via WithVerifiers. The
@@ -87,6 +97,9 @@ var syntheticAdminUser = &User{
 // [ErrUnauthenticated] when no verifier authenticates the request.
 func (a *Authenticator) Authenticate(r *http.Request) (*User, string, error) {
 	if a.cfg.bypass != nil && a.cfg.bypass() {
+		a.bypassWarned.Do(func() {
+			a.logger().Warn("auth: authentication bypass is active; matching requests are granted synthetic admin access and must never be enabled in production")
+		})
 		return syntheticAdminUser, "", nil
 	}
 
