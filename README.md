@@ -85,7 +85,7 @@ All configuration is via functional options and function parameters — no impor
 - `WithCookie(cfg)`: configurable cookie Name, Posture, Path, SameSite, Domain, TrustForwardedHeaders (see `CookieConfig`)
 - `WithIdleTimeout(d)`: session idle timeout (default: 1h)
 - `WithAbsTimeout(d)`: session absolute timeout (default: 24h)
-- `WithBypass(fn)`: bypass function for development (synthetic admin user)
+- `WithBypass(fn)`: bypass function for development (synthetic admin user); installing it logs an Info notice, and the production-safety WARN fires once on the first request the hook actually grants
 - `WithVerifiers(vs []CredentialVerifier)`: override the default verifier chain. When set, `Authenticate` iterates the supplied chain instead of the hardcoded default (`SessionVerifier` + `APIKeyVerifier`).
 - `WithActivityThrottle(d time.Duration)`: when `d>0`, `SessionVerifier` maintains a per-hash last-write map and calls `UpdateSessionActivity` at most once per `d` per hash. `d==0` (default) preserves the current write-on-every-request behavior. `d` must be less than the idle timeout, or construction returns an error (the persisted last-activity lags by up to `d`, so a throttle at or above the idle timeout would expire active sessions).
 - `WithUnauthorizedResponse(fn)`: replace `RequireAuth`'s default unauthorized response (302 to the login path for browsers, 401 JSON otherwise) with your own writer. The hook owns both branches; call `IsBrowserRequest` inside it to keep a redirect path.

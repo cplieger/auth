@@ -103,7 +103,10 @@ func WithLogger(l *slog.Logger) Option {
 
 // WithBypass sets a function that reports whether authentication is bypassed.
 // When the function returns true, all requests are treated as authenticated
-// with a synthetic admin user.
+// with a synthetic admin user. Installing the hook logs one Info line at
+// construction; the loud production-safety WARN fires once, on the first
+// request the hook actually grants — an installed-but-inactive hook (the
+// common hot-reloadable dev-flag shape) therefore never warns.
 func WithBypass(fn func() bool) Option {
 	return func(c *authConfig) { c.bypass = fn }
 }
