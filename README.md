@@ -13,7 +13,7 @@ A standalone Go authentication library providing password hashing (Argon2id with
 
 Dependencies: `golang.org/x/crypto`, `github.com/go-webauthn/webauthn`, `github.com/coreos/go-oidc/v3`, `golang.org/x/oauth2`.
 
-**Note:** HTTP handlers are app-specific and intentionally not included. Consumers should implement their own HTTP layer using the exported authentication primitives.
+**Note:** HTTP handlers are app-specific and intentionally not included. Build your own HTTP layer on the exported primitives.
 
 ## Install
 
@@ -78,18 +78,18 @@ func main() {
 
 ## Configuration
 
-All configuration is via functional options and function parameters — no import-time side effects, no environment variable reads, no global state initialization.
+All configuration is via functional options and function parameters. The library has no import-time side effects, no environment reads, and no global state.
 
 - `WithLogger(l)`: optional `*slog.Logger`; if nil, uses `slog.Default()`
 - `WithLoginPath(path)`: redirect path for unauthenticated browser requests (default: `"/login"`)
 - `WithCookie(cfg)`: configurable cookie Name, Posture, Path, SameSite, Domain, TrustForwardedHeaders (see `CookieConfig`)
 - `WithIdleTimeout(d)`: session idle timeout (default: 1h)
 - `WithAbsTimeout(d)`: session absolute timeout (default: 24h)
-- `WithBypass(fn)`: bypass function for development (synthetic admin user); installing it logs an Info notice, and the production-safety WARN fires once on the first request the hook actually grants
-- `WithVerifiers(vs []CredentialVerifier)`: override the default verifier chain. When set, `Authenticate` iterates the supplied chain instead of the hardcoded default (`SessionVerifier` + `APIKeyVerifier`).
-- `WithActivityThrottle(d time.Duration)`: when `d>0`, `SessionVerifier` maintains a per-hash last-write map and calls `UpdateSessionActivity` at most once per `d` per hash. `d==0` (default) preserves the current write-on-every-request behavior. `d` must be less than the idle timeout, or construction returns an error (the persisted last-activity lags by up to `d`, so a throttle at or above the idle timeout would expire active sessions).
+- `WithBypass(fn)`: development bypass hook (synthetic admin user); a production-safety warning fires once, on the first request the hook actually grants
+- `WithVerifiers(vs []CredentialVerifier)`: replace the default verifier chain (`SessionVerifier` + `APIKeyVerifier`) with your own
+- `WithActivityThrottle(d time.Duration)`: call `UpdateSessionActivity` at most once per `d` per session instead of on every request (default `0`: write on every request). `d` must be less than the idle timeout or construction returns an error, since the persisted last-activity lags by up to `d`.
 - `WithUnauthorizedResponse(fn)`: replace `RequireAuth`'s default unauthorized response (302 to the login path for browsers, 401 JSON otherwise) with your own writer. The hook owns both branches; call `IsBrowserRequest` inside it to keep a redirect path.
-- `WithTimeoutSource(fn)`: resolve the idle/absolute session timeouts per verification from a callback (for hot-reloadable config) instead of the static `WithIdleTimeout`/`WithAbsTimeout` values. Non-positive callback values fall back to the static values, and the activity throttle is clamped to at most half the resolved idle timeout so a shrunken idle can never expire actively-used sessions through write throttling.
+- `WithTimeoutSource(fn)`: resolve the idle/absolute session timeouts per verification from a callback (for hot-reloadable config). Non-positive callback values fall back to the static options; the activity throttle is clamped to half the resolved idle timeout so a shrunken idle cannot expire active sessions.
 - `NewHasher(params, ...HasherOption)`: configurable Argon2id parameters; use `WithPepper([]byte)` for HMAC peppering
 - `GenerateAPIKey(prefix)`: pass your key prefix (e.g. `"ak_"`)
 - `ValidatePasswordContext(password, username, forbiddenWords)`: pass app-specific forbidden words
@@ -115,101 +115,31 @@ if err != nil {
 
 `CookiePosture` controls the cookie name prefix and Secure flag strategy:
 
-| Value               | Behavior                                                                                                                                                                                                                                          |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| (default)           | Static `__Host-` prefix when `Secure` is true/auto-HTTPS                                                                                                                                                                                          |
-| `PosturePerRequest` | Selects cookie name and Secure flag at request time via `isHTTPS(r)`. HTTPS requests get `__Host-`+base+`Secure`; plain HTTP gets the bare base name without the Secure flag. Respects `TrustForwardedHeaders` for `X-Forwarded-Proto` detection. |
+| Value               | Behavior                                                                                                                                                                                                                             |
+|---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| (default)           | Static `__Host-` prefix when `Secure` is true/auto-HTTPS                                                                                                                                                                             |
+| `PosturePerRequest` | Selects the cookie name and Secure flag at request time: HTTPS requests get `__Host-`+base+`Secure`; plain HTTP gets the bare base name without the Secure flag. Respects `TrustForwardedHeaders` for `X-Forwarded-Proto` detection. |
 
-`PosturePerRequest` is useful for services that accept both HTTP and HTTPS traffic (e.g., behind a load balancer that terminates TLS for some paths but not others).
+`PosturePerRequest` suits services that accept both HTTP and HTTPS traffic, such as a load balancer that terminates TLS for some paths but not others.
 
 ## API
 
-### Password Hashing
+Grouped summary of the exported surface. Signatures and full semantics live in the [Go Reference](https://pkg.go.dev/github.com/cplieger/auth/v2).
 
-- `HashPassword(password) (string, error)` — Argon2id hash in PHC string format (OWASP defaults)
-- `VerifyPassword(password, hash) (bool, error)` — verify hash
-- `NeedsRehash(encodedHash) bool` — check if hash uses outdated parameters
-- `DummyHash() string` — pre-computed hash for constant-time login timing equalization
-- `DefaultArgon2Params() Argon2Params` — OWASP-recommended Argon2id parameters
-- `NewHasher(params, ...HasherOption) (*Hasher, error)` — configurable Argon2id hasher
-- `WithPepper(pepper) HasherOption` — enable HMAC peppering on a Hasher
-- `Hasher.Hash(password) (string, error)` — hash with custom params
-- `Hasher.Verify(password, hash) (bool, error)` — verify with custom params
-- `Hasher.NeedsRehash(hash) bool` — check against custom params
-- `ValidatePasswordLength(password, passwordOnly) error` — NIST length check (max 128)
-- `ValidatePasswordContext(password, username, forbiddenWords) error` — contextual check
-- `CheckBreachedPassword(ctx, client, password) (bool, error)` — HIBP k-anonymity
-
-### Sessions & Tokens
-
-- `GenerateSessionToken() (plaintext, hash, error)` — 256-bit session token
-- `RotateSessionToken(oldPlaintext) (newPlaintext, newHash, oldHash, error)` — rotation helper
-- `ValidateSession(sess, idle, abs, now) error` — session expiry check
-- `SessionHash(token) string` — SHA-256 hash of plaintext token
-- `HexSHA256(s) string` — hex-encoded SHA-256
-- `CSRFToken(key, sessionHash) (string, error)` — generate CSRF token bound to session
-- `VerifyCSRFToken(key, sessionHash, token, maxAge) error` — verify CSRF token
-- `GenerateOpaqueToken() (plaintext, hash, error)` — for password-reset/email-verification
-- `VerifyOpaqueToken(plaintext, storedHash, expiresAt) error` — verify opaque token
-
-### Cookie Management
-
-- `CookieConfig.CookieName(r) string` — resolve cookie name for request
-- `CookieConfig.SetCookie(w, r, token, maxAge)` — set session cookie
-- `CookieConfig.ReadCookie(r) string` — read session token
-- `CookieConfig.ClearCookie(w, r)` — clear session cookie
-- `SessionCookieName(r) / SetSessionCookie / ReadSessionCookie / ClearSessionCookie` — default-config free functions
-
-### API Keys
-
-- `GenerateAPIKey(keyPrefix) (plaintext, hash, displayPrefix, displaySuffix, error)` — API key generation
-- `VerifyAPIKey(ctx, store, key) (*Key, error)` — API key verification (constant-time hash equality + expiry check)
-- `APIKeyHash(key) string` — SHA-256 hash of API key
-
-### WebAuthn
-
-All in the `github.com/cplieger/auth/v2/webauthn` subpackage:
-
-- `webauthn.NewWebAuthn(rpID, rpDisplayName, rpOrigins) (*webauthn.WebAuthn, error)` — WebAuthn setup (enforced 5-minute ceremony timeout)
-- `webauthn.NewWebAuthnUser(user, creds) (*webauthn.User, error)` — adapt `auth.User` + credentials to the go-webauthn `User` interface
-- `webauthn.BeginRegistration / FinishRegistration / BeginLogin / FinishLogin` — WebAuthn ceremonies
-- `webauthn.CompleteLogin(ctx, wa, store, sessionData, r) (*auth.User, *webauthn.Credential, error)` — store-backed login completion: resolves the asserting user from the user handle, verifies the assertion, and persists sign-count/flag custody (including CloneWarning). Best-effort custody write; the caller still owns account-status policy (check `User.Enabled`) and session creation.
-- `webauthn.BeginConditionalLogin(wa) (*protocol.CredentialAssertion, *webauthn.SessionData, error)` — conditional mediation (autofill UI)
-
-### OIDC
-
-- `oidc.NewProvider(ctx, cfg) (*oidc.Provider, error)` — OIDC provider with PKCE (cfg is `oidc.Config`)
-- `oidc.ValidateConfig(cfg) error` — validate OIDC configuration
-- `oidc.GenerateState() (string, error)` — random state parameter
-- `oidc.GeneratePKCE() (verifier, challenge, error)` — PKCE S256
-- `provider.AuthorizationURL(state, nonce, codeChallenge) string` — build the authorization redirect URL (binds the nonce and the PKCE S256 challenge)
-- `provider.Exchange(ctx, code, codeVerifier, nonce) (*oidc.Claims, *time.Time, error)` — exchange the auth code and verify the ID token; `nonce` must be the non-empty value bound into `AuthorizationURL` (an empty nonce is rejected with `ErrOIDCNonceMismatch`, fail-closed)
-- `oidc.ResolveUser(claims, existingBySub) (user *auth.User, isNew bool, err error)` — map an OIDC identity by `(issuer, sub)` to a user; for a new identity it provisions from the claims and returns `ErrOIDCNoUsername` when the token carries neither `preferred_username` nor `email`
-
-### Auth Middleware
-
-- `NewAuthenticator(store, ...Option) (*Authenticator, error)` — create authenticator with functional options; errors on an unusable config (see `CookieConfig.Validate`)
-- `NewSessionVerifier(store, ...Option) (*SessionVerifier, error)` — session-cookie credential verifier; errors on an unusable config
-- `NewAPIKeyVerifier(store, ...Option) *APIKeyVerifier` — API-key credential verifier (reads the `X-Api-Key` header only, never a URL query parameter — CWE-598)
-- `Authenticator.Authenticate(r) (*User, string, error)` — resolve request to user
-- `Authenticator.RequireAuth(w, r) (*User, string, bool)` — auth guard
-- `HasRole(user, role) bool` — RBAC check
-- `ValidateRedirectURI(uri) string` — safe relative-path redirect validation
-- `CanDisableAuthMethod(method, hasPassword, passkeyCount, oidcEnabled, oidcLinked) bool` — check method removal safety
-- `IsBrowserRequest(r) bool` — detect browser vs API client
-- `WithVerifiers(vs []CredentialVerifier)` — override the default verifier chain
-- `WithActivityThrottle(d time.Duration)` — throttle `UpdateSessionActivity` writes (see Configuration)
-- `WithUnauthorizedResponse(fn)` — custom unauthorized response for `RequireAuth` (see Configuration)
-- `WithTimeoutSource(fn)` — per-request idle/absolute timeout resolution for hot-reloadable config (see Configuration)
-- `CredentialVerifier` — interface for pluggable credential verifiers
-- `SessionStore` / `webauthn.Store` (subpackage `github.com/cplieger/auth/v2/webauthn`) — interfaces for consumer to implement; `webauthn.Store` is the contract `webauthn.CompleteLogin` consumes
-- `store.Composite` — composite interface (subpackage `github.com/cplieger/auth/v2/store`)
+- **Password hashing:** `HashPassword` / `VerifyPassword` / `NeedsRehash` (Argon2id PHC strings, OWASP defaults), `DummyHash` (constant-time timing equalization for unknown-user logins), `DefaultArgon2Params`, `NewHasher` + `WithPepper` (custom parameters, HMAC pepper), `Hasher.Hash` / `Hasher.Verify` / `Hasher.NeedsRehash`, `ValidatePasswordLength` (NIST, max 128), `ValidatePasswordContext`, `CheckBreachedPassword` (HIBP k-anonymity).
+- **Sessions and tokens:** `GenerateSessionToken` (256-bit), `RotateSessionToken`, `ValidateSession`, `SessionHash`, `HexSHA256`, `CSRFToken` / `VerifyCSRFToken` (bound to the session hash), `GenerateOpaqueToken` / `VerifyOpaqueToken` (password reset, email verification).
+- **Cookies:** `CookieConfig.CookieName` / `SetCookie` / `ReadCookie` / `ClearCookie`, plus the default-config free functions `SessionCookieName` / `SetSessionCookie` / `ReadSessionCookie` / `ClearSessionCookie`.
+- **API keys:** `GenerateAPIKey`, `VerifyAPIKey` (constant-time hash equality plus expiry check), `APIKeyHash`.
+- **Middleware and guards:** `NewAuthenticator` and `NewSessionVerifier` (both return an error on an unusable config; see `CookieConfig.Validate`), `NewAPIKeyVerifier` (reads the `X-Api-Key` header only, never a URL query parameter, per CWE-598), `Authenticator.Authenticate` / `Authenticator.RequireAuth`, `HasRole` (flat RBAC), `ValidateRedirectURI` (relative paths only), `CanDisableAuthMethod`, `IsBrowserRequest`. The `WithVerifiers` / `WithActivityThrottle` / `WithUnauthorizedResponse` / `WithTimeoutSource` options are described under [Configuration](#configuration).
+- **Interfaces:** `CredentialVerifier` (pluggable credential verification), `SessionStore` and `webauthn.Store` (consumer-implemented storage), `store.Composite` (composite store interface, subpackage `auth/store`).
+- **WebAuthn (`github.com/cplieger/auth/v2/webauthn`):** `NewWebAuthn`, `NewWebAuthnUser`, `BeginRegistration` / `FinishRegistration` / `BeginLogin` / `FinishLogin`, `BeginConditionalLogin` (conditional mediation, autofill UI), `CompleteLogin` (store-backed login completion; the caller keeps account-status policy and session creation).
+- **OIDC (`github.com/cplieger/auth/v2/oidc`):** `NewProvider` and `ValidateConfig` (both take an `oidc.Config`), `GenerateState`, `GeneratePKCE` (S256), `Provider.AuthorizationURL`, `Provider.Exchange` (verifies the ID token; an empty or mismatched nonce fails closed with `ErrOIDCNonceMismatch`), `ResolveUser` (maps an OIDC identity by issuer and subject to a user; `ErrOIDCNoUsername` when the token carries neither `preferred_username` nor `email`).
 
 ## Subpackages
 
 ### `auth/store`
 
-Composite interface `store.Composite` (formerly `store.AuthStore`).
+Composite interface `store.Composite`.
 
 ### `auth/ratelimit`
 
@@ -236,9 +166,9 @@ store := authtest.NewMemStore()
 store.AddUser(&auth.User{Username: "test", Role: auth.RoleUser, Enabled: true})
 ```
 
-## Unsupported Features (by design)
+## Unsupported by Design
 
-The following features are intentionally out of scope. Each has a documented rationale and, where applicable, a recommended alternative.
+The following features are intentionally out of scope.
 
 | Feature                                | Rationale                                                                                                                |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -254,6 +184,11 @@ The following features are intentionally out of scope. Each has a documented rat
 | Passkey well-known endpoints           | Browser/credential-manager concern, not server-auth-library concern.                                                     |
 | CSRF middleware (full HTTP layer)      | Library provides `CSRFToken`/`VerifyCSRFToken` primitives; full middleware is HTTP-framework-specific.                   |
 
+## Contributing
+
+Issues and PRs are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+conventions and how to run the checks locally.
+
 ## Disclaimer
 
 This project is built with care and follows security best practices, but it is intended for personal / self-hosted use. No guarantees of fitness for production environments. Use at your own risk.
@@ -262,4 +197,4 @@ This project was built with AI-assisted tooling using [Claude](https://claude.co
 
 ## License
 
-GPL-3.0 — see [LICENSE](LICENSE).
+GPL-3.0. See [LICENSE](LICENSE).

@@ -1,4 +1,4 @@
-# Security assurance case — auth
+# Security assurance case: auth
 
 This extends the shared
 [default assurance case](https://github.com/cplieger/.github/blob/main/assurance-case.md)
@@ -9,7 +9,7 @@ shared posture (CI scanning, supply chain, fuzzing, residual risks).
 
 `auth` provides Go authentication primitives: Argon2id password hashing,
 session management, API keys, CSRF protection, WebAuthn/passkeys, OIDC + PKCE,
-and rate limiting. It is security-critical by definition — it is the thing other
+and rate limiting. It is security-critical by definition: it is the thing other
 services trust to decide who may act. The HTTP layer is the consumer's job; this
 library provides the verified building blocks.
 
