@@ -4,7 +4,7 @@
 providing security primitives: Argon2id password hashing, WebAuthn/FIDO2,
 OIDC with PKCE, sessions, API keys, CSRF tokens, and flat RBAC. Because it
 sits on the critical path of consumers' login flows, correctness and
-constant-time behavior matter more than feature breadth — read this before
+constant-time behavior matter more than feature breadth. Read this before
 opening a PR.
 
 ## Security invariants (don't regress these)
@@ -15,13 +15,13 @@ needs an explicit `sec:` rationale in the commit body.
 - **Constant-time secret comparison.** Every comparison of a
   secret-derived value uses `crypto/subtle.ConstantTimeCompare`, never `==`
   or `bytes.Equal`. This covers password verification (`password.go`,
-  `hasher.go`), API-key hash equality (`apikey.go` — also guards against a
+  `hasher.go`), API-key hash equality (`apikey.go`; this also guards against a
   store doing a loose/prefix lookup), opaque-token verification, and CSRF
   HMAC checks (`token.go`). New verification paths must follow suit.
 - **Argon2id OWASP parameters.** The defaults in `password.go` are
   `m=19456` (19 MiB), `t=2`, `p=1`, 16-byte salt, 32-byte key. Hashes are
   PHC strings (`$argon2id$v=19$m=...,t=...,p=...$salt$key`). `NeedsRehash`
-  compares against these constants — keep the two in sync. `argon2_bounds_test.go`
+  compares against these constants; keep the two in sync. `argon2_bounds_test.go`
   pins the bounds.
 - **Login timing equalization.** `DummyHash()` exists so the login handler
   can run a hash for unknown users and avoid a user-enumeration timing
@@ -31,7 +31,7 @@ needs an explicit `sec:` rationale in the commit body.
   would otherwise panic). Malformed-input handling here is fuzzed; keep it
   total.
 - **Opaque-token model.** Session tokens are 256-bit random values stored as
-  SHA-256 hashes; the cookie carries the random token, not sensitive data —
+  SHA-256 hashes; the cookie carries the random token, not sensitive data,
   hence no cookie encryption/signing. CSRF tokens are HMAC-bound to the
   session hash. PKCE uses S256.
 - **Safe redirects.** `ValidateRedirectURI` only permits relative paths;
@@ -42,19 +42,19 @@ needs an explicit `sec:` rationale in the commit body.
 The root package holds the primitives; subpackages are independently
 importable.
 
-| Path                       | Purpose                                                                                                                                                                     |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `github.com/cplieger/auth` | Passwords, sessions, tokens, cookies, API keys, WebAuthn/OIDC entry points, middleware/guards (`Authenticator`, `SessionVerifier`, `APIKeyVerifier`, `CredentialVerifier`). |
-| `auth/store`               | `store.Composite` interface (user/session/passkey/key/OIDC-state) for the consumer's persistence layer.                                                                     |
-| `auth/ratelimit`           | Dual sliding-window per-IP + per-account brute-force limiter (OWASP ASVS 2.2.1). Stdlib-only.                                                                               |
-| `auth/oidc`                | OIDC provider config validation and helpers.                                                                                                                                |
-| `auth/webauthn`            | WebAuthn/FIDO2 helpers (e.g. AAGUID formatting).                                                                                                                            |
-| `auth/authtest`            | Exported in-memory `SessionStore`/`AuthStore` (`NewMemStore`, `AddUser`) for consumer tests. Not for production.                                                            |
+| Path                          | Purpose                                                                                                                                                                     |
+|-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `github.com/cplieger/auth/v2` | Passwords, sessions, tokens, cookies, API keys, WebAuthn/OIDC entry points, middleware/guards (`Authenticator`, `SessionVerifier`, `APIKeyVerifier`, `CredentialVerifier`). |
+| `auth/store`                  | `store.Composite` interface (user/session/passkey/key/OIDC-state) for the consumer's persistence layer.                                                                     |
+| `auth/ratelimit`              | Dual sliding-window per-IP + per-account brute-force limiter (OWASP ASVS 2.2.1). Stdlib-only.                                                                               |
+| `auth/oidc`                   | OIDC provider config validation and helpers.                                                                                                                                |
+| `auth/webauthn`               | WebAuthn/FIDO2 helpers (e.g. AAGUID formatting).                                                                                                                            |
+| `auth/authtest`               | Exported in-memory `SessionStore`/`AuthStore` (`NewMemStore`, `AddUser`) for consumer tests. Not for production.                                                            |
 
 Storage is injected by the consumer: the library defines interfaces
 (`SessionStore`, `store.Composite`, `CredentialVerifier`) and never
 ships a concrete persistence implementation. Configuration is via
-functional options only — no env reads, no global init, no import-time
+functional options only: no env reads, no global init, no import-time
 side effects.
 
 ### Scope contract
@@ -62,7 +62,7 @@ side effects.
 The README "Unsupported Features" table lists deliberate non-goals (full
 OIDC token-refresh orchestration, multi-provider registry, hierarchical
 RBAC, cookie encryption, full CSRF middleware, etc.). These are binding
-decisions, not TODOs — don't implement them without first changing that
+decisions, not TODOs; don't implement them without first changing that
 table. HTTP handlers are intentionally out of scope; consumers build the
 HTTP layer on the exported primitives.
 
@@ -75,7 +75,7 @@ go build ./...
 go test ./...
 ```
 
-Run the full suite with the race detector before pushing — concurrency
+Run the full suite with the race detector before pushing; concurrency
 matters for the rate limiter and the session store:
 
 ```sh
@@ -99,9 +99,9 @@ gofumpt). `sloglint` is `kv-only`, so use key-value `slog` calls.
 
 ### Fuzzing
 
-The library has an extensive fuzz suite — parsers and verifiers that touch
-untrusted input each have a target. Targets live beside the code they test
-and are named `Fuzz*`. Run one for a bounded time like so:
+Parsers and verifiers that touch untrusted input each have a fuzz target.
+Targets live beside the code they test and are named `Fuzz*`. Run one for
+a bounded time like so:
 
 ```sh
 # Root package (run from repo root):
@@ -120,8 +120,8 @@ go test -run '^$' -fuzz '^FuzzFormatAAGUID$' -fuzztime 30s ./webauthn
 ```
 
 Other root targets include `FuzzValidatePasswordLength`,
-`FuzzValidatePasswordContext`, `FuzzCSRFTokenRoundTrip`,
-`FuzzValidateCookieField`, and `FuzzVerifyAPIKeyExpired`. `go test` only
+`FuzzValidatePasswordContext`, `FuzzCSRFTokenRoundTrip`, and
+`FuzzValidateCookieField`. `go test` only
 runs one `-fuzz` target per package per invocation; the corpus replays as
 normal unit tests under `go test ./...`.
 
