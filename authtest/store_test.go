@@ -1,7 +1,6 @@
 package authtest_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -20,7 +19,7 @@ func TestMemStore_user_roundtrip(t *testing.T) {
 	u := &auth.User{Username: "test", Role: auth.RoleUser, Enabled: true}
 	store.AddUser(u)
 
-	got, err := store.GetUserByID(context.Background(), u.ID)
+	got, err := store.GetUserByID(t.Context(), u.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -36,7 +35,7 @@ func TestMemStore_session_roundtrip(t *testing.T) {
 	now := time.Now()
 	store.AddSession(&auth.Session{TokenHash: "hash1", CreatedAt: now, LastActivity: now})
 
-	sess, err := store.GetSessionByHash(context.Background(), "hash1")
+	sess, err := store.GetSessionByHash(t.Context(), "hash1")
 	if err != nil {
 		t.Fatalf("GetSessionByHash: %v", err)
 	}
@@ -48,7 +47,7 @@ func TestMemStore_session_roundtrip(t *testing.T) {
 func TestMemStore_UpdateSessionActivity(t *testing.T) {
 	t.Parallel()
 	store := authtest.NewMemStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	now := time.Now()
 	store.AddSession(&auth.Session{TokenHash: "hash1", CreatedAt: now, LastActivity: now})
@@ -73,7 +72,7 @@ func TestMemStore_apikey_roundtrip(t *testing.T) {
 
 	store.AddAPIKey(&auth.Key{KeyHash: "keyhash", Label: "test"})
 
-	key, err := store.GetAPIKeyByHash(context.Background(), "keyhash")
+	key, err := store.GetAPIKeyByHash(t.Context(), "keyhash")
 	if err != nil {
 		t.Fatalf("GetAPIKeyByHash: %v", err)
 	}
@@ -85,7 +84,7 @@ func TestMemStore_apikey_roundtrip(t *testing.T) {
 func TestMemStore_DeleteUserSessions_keepsExcepted(t *testing.T) {
 	t.Parallel()
 	store := authtest.NewMemStore()
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now()
 
 	store.AddSession(&auth.Session{TokenHash: "u1-keep", UserID: 1, CreatedAt: now, LastActivity: now})
@@ -114,7 +113,7 @@ func TestMemStore_DeleteUserSessions_keepsExcepted(t *testing.T) {
 func TestMemStore_DeleteSession_removes(t *testing.T) {
 	t.Parallel()
 	store := authtest.NewMemStore()
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now()
 	if err := store.CreateSession(ctx, &auth.Session{TokenHash: "h", UserID: 1, CreatedAt: now, LastActivity: now}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -134,7 +133,7 @@ func TestMemStore_DeleteSession_removes(t *testing.T) {
 func TestMemStore_missing_lookups_return_nil_without_error(t *testing.T) {
 	t.Parallel()
 	store := authtest.NewMemStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if u, err := store.GetUserByID(ctx, 999); err != nil || u != nil {
 		t.Errorf("GetUserByID(absent) = (%+v, %v), want (nil, nil)", u, err)

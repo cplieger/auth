@@ -81,7 +81,7 @@ func TestProperty_APIKeyFormatAndUniqueness(t *testing.T) {
 func TestVerifyAPIKey_error_paths(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "keyuser", PasswordHash: "dummy", Role: "admin", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -130,7 +130,7 @@ func TestVerifyAPIKey_error_paths(t *testing.T) {
 func TestVerifyAPIKey_expired(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "keyuser", PasswordHash: "dummy", Role: "admin", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -159,7 +159,7 @@ func TestVerifyAPIKey_expired(t *testing.T) {
 func TestVerifyAPIKey_not_expired(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "keyuser", PasswordHash: "dummy", Role: "admin", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -241,7 +241,7 @@ func TestVerifyAPIKey_rejects_hash_mismatch(t *testing.T) {
 	// the presented key. VerifyAPIKey must reject it rather than trust the
 	// store's lookup.
 	store := &looseAPIKeyStore{key: &Key{KeyHash: "not-the-right-hash", UserID: 7}}
-	if _, err := VerifyAPIKey(context.Background(), store, plaintext); !errors.Is(err, ErrInvalidAPIKey) {
+	if _, err := VerifyAPIKey(t.Context(), store, plaintext); !errors.Is(err, ErrInvalidAPIKey) {
 		t.Fatalf("VerifyAPIKey(hash mismatch) = %v, want ErrInvalidAPIKey", err)
 	}
 }
@@ -250,7 +250,7 @@ func TestProperty_APIKeyRoleInheritance(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(rt *rapid.T) {
 		db := newFakeSessionStore()
-		ctx := context.Background()
+		ctx := t.Context()
 
 		role := rapid.SampledFrom([]string{"admin", "user"}).Draw(rt, "role")
 		username := fmt.Sprintf("user_%s", rapid.StringMatching(`[a-z]{4,8}`).Draw(rt, "username"))

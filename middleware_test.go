@@ -115,7 +115,7 @@ func TestValidateRedirectURI_table(t *testing.T) {
 func TestAuthenticate_session_cookie_valid(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "sessuser", PasswordHash: "dummy", Role: "admin", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -153,7 +153,7 @@ func TestAuthenticate_session_cookie_valid(t *testing.T) {
 func TestAuthenticate_expired_session_falls_through(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "expuser", PasswordHash: "dummy", Role: "user", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -185,7 +185,7 @@ func TestAuthenticate_expired_session_falls_through(t *testing.T) {
 func TestAuthenticate_api_key_header(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "apiuser", PasswordHash: "dummy", Role: "user", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -228,7 +228,7 @@ func TestAuthenticate_no_credentials(t *testing.T) {
 func TestAuthenticate_disabled_user_session(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "disabled", PasswordHash: "dummy", Role: "user", Enabled: false}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -292,7 +292,7 @@ func TestRequireAuth_unauthenticated_api_returns_401(t *testing.T) {
 func TestAuthenticate_api_key_query_param_rejected(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "queryuser", PasswordHash: "dummy", Role: "admin", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -339,7 +339,7 @@ func TestAuthenticate_invalid_api_key(t *testing.T) {
 func TestAuthenticate_disabled_user_api_key(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "disabledapi", PasswordHash: "dummy", Role: "user", Enabled: false}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -369,7 +369,7 @@ func TestAuthenticate_disabled_user_api_key(t *testing.T) {
 func TestRequireAuth_authenticated_returns_user(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "authuser", PasswordHash: "dummy", Role: "admin", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -415,7 +415,7 @@ func TestAuthenticate_session_not_found_falls_through(t *testing.T) {
 func TestAuthenticate_stale_session_falls_through_to_api_key(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "fallthrough_user", PasswordHash: "dummy", Role: "user", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -486,7 +486,7 @@ func TestAuthenticator_Logger_used(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// A disabled user with an otherwise-valid session makes the default
 	// session verifier emit a debug record; it must go to the injected logger.

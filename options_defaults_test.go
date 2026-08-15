@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -49,7 +48,7 @@ func TestNewSessionVerifier_NoOptions_AppliesDefaults(t *testing.T) {
 func TestNewSessionVerifier_NoOptions_SessionValid(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "default_user", PasswordHash: "dummy", Role: "user", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -90,7 +89,7 @@ func TestNewSessionVerifier_NoOptions_SessionValid(t *testing.T) {
 func TestNewAuthenticator_NoOptions_SessionValid(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "noopt_user", PasswordHash: "dummy", Role: "admin", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -130,7 +129,7 @@ func TestNewAuthenticator_NoOptions_SessionValid(t *testing.T) {
 func TestNewAPIKeyVerifier_NoOptions(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "apinoopt", PasswordHash: "dummy", Role: "user", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {

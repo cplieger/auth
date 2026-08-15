@@ -33,7 +33,7 @@ func FuzzVerifyAPIKey(f *testing.F) {
 		store := &fakeAPIKeyStore{key: &Key{KeyHash: hash, UserID: 1}}
 
 		// Round-trip: correct key must verify
-		k, err := VerifyAPIKey(context.Background(), store, plaintext)
+		k, err := VerifyAPIKey(t.Context(), store, plaintext)
 		if err != nil {
 			t.Fatalf("round-trip failed: %v", err)
 		}
@@ -45,7 +45,7 @@ func FuzzVerifyAPIKey(f *testing.F) {
 		if fuzzInput == plaintext {
 			return
 		}
-		k, err = VerifyAPIKey(context.Background(), store, fuzzInput)
+		k, err = VerifyAPIKey(t.Context(), store, fuzzInput)
 		if err == nil && k != nil {
 			t.Fatal("fuzzed key verified against hash")
 		}

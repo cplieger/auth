@@ -43,7 +43,7 @@ func (c *countingStore) count(tokenHash string) int {
 func setupThrottleSession(t *testing.T) (*countingStore, string, string) {
 	t.Helper()
 	cs := newCountingStore()
-	ctx := context.Background()
+	ctx := t.Context()
 	user := &User{Username: "u", PasswordHash: "dummy", Role: RoleUser, Enabled: true}
 	if err := cs.CreateUser(ctx, user); err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ func TestSessionVerifier_Throttle_Zero_WritesEveryRequest(t *testing.T) {
 	cs, plaintext, hash := setupThrottleSession(t)
 	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
 	v := mustSessionVerifier(t, cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
-	ctx := context.Background()
+	ctx := t.Context()
 	r := throttleRequest(plaintext)
 
 	const n = 5
@@ -97,7 +97,7 @@ func TestSessionVerifier_Throttle_Positive_AtMostOncePerWindow(t *testing.T) {
 	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
 	v := mustSessionVerifier(t, cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
 		WithActivityThrottle(30*time.Minute))
-	ctx := context.Background()
+	ctx := t.Context()
 	r := throttleRequest(plaintext)
 
 	for range 5 {
@@ -118,7 +118,7 @@ func TestSessionVerifier_Throttle_WritesAgainAfterWindow(t *testing.T) {
 		cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
 		v := mustSessionVerifier(t, cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
 			WithActivityThrottle(10*time.Millisecond))
-		ctx := context.Background()
+		ctx := t.Context()
 		r := throttleRequest(plaintext)
 
 		if _, _, err := v.Verify(ctx, r); err != nil {
@@ -150,7 +150,7 @@ func TestSessionVerifier_Throttle_ConcurrentSafe(t *testing.T) {
 	cfg := CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
 	v := mustSessionVerifier(t, cs, WithCookie(cfg), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
 		WithActivityThrottle(30*time.Minute))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	const goroutines = 50
 	var wg sync.WaitGroup

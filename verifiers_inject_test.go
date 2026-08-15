@@ -56,7 +56,7 @@ func TestAuthenticator_WithVerifiers_ResolvesThroughInjected(t *testing.T) {
 func TestAuthenticator_WithVerifiers_EmptyFallsBackToDefault(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "alice", PasswordHash: "dummy", Role: RoleUser, Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {

@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -15,7 +14,7 @@ func AuthStoreContractSuite(t *testing.T, newStore func(t *testing.T) AuthStore)
 	t.Run("GetSessionByHash_missing_returns_nil_nil", func(t *testing.T) {
 		t.Parallel()
 		s := newStore(t)
-		sess, err := s.GetSessionByHash(context.Background(), "nonexistent")
+		sess, err := s.GetSessionByHash(t.Context(), "nonexistent")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -27,7 +26,7 @@ func AuthStoreContractSuite(t *testing.T, newStore func(t *testing.T) AuthStore)
 	t.Run("GetUserByID_missing_returns_nil_nil", func(t *testing.T) {
 		t.Parallel()
 		s := newStore(t)
-		user, err := s.GetUserByID(context.Background(), 99999)
+		user, err := s.GetUserByID(t.Context(), 99999)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -39,7 +38,7 @@ func AuthStoreContractSuite(t *testing.T, newStore func(t *testing.T) AuthStore)
 	t.Run("GetAPIKeyByHash_missing_returns_nil_nil", func(t *testing.T) {
 		t.Parallel()
 		s := newStore(t)
-		key, err := s.GetAPIKeyByHash(context.Background(), "nonexistent")
+		key, err := s.GetAPIKeyByHash(t.Context(), "nonexistent")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -64,7 +63,7 @@ func TestFakeSessionStore_contract(t *testing.T) {
 
 func TestFakeSessionStore_roundtrip(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 	store := newFakeSessionStore()
 
 	u := &User{Username: "contract-user", PasswordHash: "hash"}
@@ -111,7 +110,7 @@ func TestProperty_SessionInvalidationOnPasswordChange(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(rt *rapid.T) {
 		db := newFakeSessionStore()
-		ctx := context.Background()
+		ctx := t.Context()
 
 		user := &User{
 			Username:     "testuser",

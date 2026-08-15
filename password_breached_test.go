@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"crypto/sha1"
 	"fmt"
 	"net/http"
@@ -65,7 +64,7 @@ func TestCheckBreachedPassword_sets_add_padding_header(t *testing.T) {
 	prefix := fmt.Sprintf("%X", hash)[:5]
 	client, rt := hibpFakeWithCapture(t, map[string]string{prefix: ""})
 
-	_, _ = CheckBreachedPassword(context.Background(), client, "anything")
+	_, _ = CheckBreachedPassword(t.Context(), client, "anything")
 
 	if rt.gotAddPadding != "true" {
 		t.Errorf("Add-Padding = %q, want %q", rt.gotAddPadding, "true")
@@ -82,7 +81,7 @@ func TestCheckBreachedPassword_filters_zero_count_padding(t *testing.T) {
 	body := suffix + ":0\nDEADBEEF" + strings.Repeat("0", len(suffix)-8) + ":7\n"
 	client := newHibpFake(t, map[string]string{prefix: body})
 
-	breached, err := CheckBreachedPassword(context.Background(), client, password)
+	breached, err := CheckBreachedPassword(t.Context(), client, password)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,7 +100,7 @@ func TestCheckBreachedPassword_real_hit(t *testing.T) {
 	body := suffix + ":42\n"
 	client := newHibpFake(t, map[string]string{prefix: body})
 
-	breached, err := CheckBreachedPassword(context.Background(), client, password)
+	breached, err := CheckBreachedPassword(t.Context(), client, password)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -119,7 +118,7 @@ func TestCheckBreachedPassword_no_match(t *testing.T) {
 	body := "DEADBEEFCAFE0000111122223333444455556666:5\n"
 	client := newHibpFake(t, map[string]string{prefix: body})
 
-	breached, err := CheckBreachedPassword(context.Background(), client, password)
+	breached, err := CheckBreachedPassword(t.Context(), client, password)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -154,7 +153,7 @@ func TestCheckBreachedPassword_failsOpenOnUpstreamFailure(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			client := &http.Client{Transport: tc.transport}
-			breached, err := CheckBreachedPassword(context.Background(), client, "any-password-value")
+			breached, err := CheckBreachedPassword(t.Context(), client, "any-password-value")
 			if err != nil {
 				t.Errorf("CheckBreachedPassword(%s) error = %v, want nil (fail open)", tc.name, err)
 			}
@@ -177,7 +176,7 @@ func TestCheckBreachedPassword_skipsMalformedCountLine(t *testing.T) {
 	body := suffix + ":not-a-number\n"
 	client := newHibpFake(t, map[string]string{prefix: body})
 
-	breached, err := CheckBreachedPassword(context.Background(), client, password)
+	breached, err := CheckBreachedPassword(t.Context(), client, password)
 	if err != nil {
 		t.Fatalf("CheckBreachedPassword error = %v, want nil", err)
 	}

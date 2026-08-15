@@ -119,7 +119,7 @@ func TestStoreUserFinder_table(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			finder := storeUserFinder(context.Background(), tc.store)
+			finder := storeUserFinder(t.Context(), tc.store)
 			got, err := finder(nil, tc.handle)
 
 			if tc.wantErr != "" {
@@ -150,9 +150,9 @@ func TestStoreUserFinder_table(t *testing.T) {
 // message, and no internal error detail leaks into the ceremony error.
 func TestStoreUserFinder_lookup_failures_stay_generic(t *testing.T) {
 	t.Parallel()
-	finder := storeUserFinder(context.Background(), &fakeStore{userErr: errors.New("pg://secret-host timeout")})
+	finder := storeUserFinder(t.Context(), &fakeStore{userErr: errors.New("pg://secret-host timeout")})
 	_, errStoreFail := finder(nil, userHandle(1))
-	finder = storeUserFinder(context.Background(), &fakeStore{})
+	finder = storeUserFinder(t.Context(), &fakeStore{})
 	_, errMissing := finder(nil, userHandle(1))
 
 	if errStoreFail == nil || errMissing == nil {
@@ -180,7 +180,7 @@ func TestPersistLoginCustody_records_all_flags(t *testing.T) {
 		Authenticator: webauthn.Authenticator{SignCount: 42, CloneWarning: true},
 	}
 
-	persistLoginCustody(context.Background(), fs, cred)
+	persistLoginCustody(t.Context(), fs, cred)
 
 	if fs.updated == nil {
 		t.Fatal("custody write not issued")
@@ -200,7 +200,7 @@ func TestPersistLoginCustody_failure_warns_only(t *testing.T) {
 	h := capture.Default(t)
 	fs := &fakeStore{updateErr: errors.New("bucket unavailable")}
 
-	persistLoginCustody(context.Background(), fs, &webauthn.Credential{ID: []byte{1}})
+	persistLoginCustody(t.Context(), fs, &webauthn.Credential{ID: []byte{1}})
 
 	if n := h.CountMsg("post-login credential update failed"); n != 1 {
 		t.Errorf("custody failure logged %d warnings, want 1", n)
@@ -220,7 +220,7 @@ func TestCompleteLogin_ceremony_failure_returns_wrapped_error(t *testing.T) {
 	sess := &webauthn.SessionData{Challenge: "test-challenge"}
 	r := httptest.NewRequest(http.MethodPost, "/finish", strings.NewReader("not json"))
 
-	user, cred, cerr := CompleteLogin(context.Background(), wa, fs, sess, r)
+	user, cred, cerr := CompleteLogin(t.Context(), wa, fs, sess, r)
 	if cerr == nil {
 		t.Fatal("CompleteLogin with garbage assertion = nil error, want failure")
 	}

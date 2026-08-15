@@ -26,7 +26,7 @@ func newVerifierRequest(t *testing.T, plaintext string) *http.Request {
 func newVerifierSession(t *testing.T, enabled bool) (*fakeSessionStore, string) {
 	t.Helper()
 	store := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 	user := &User{Username: "alice", Role: RoleAdmin, Enabled: enabled}
 	if err := store.CreateUser(ctx, user); err != nil {
 		t.Fatalf("CreateUser: %v", err)
@@ -51,7 +51,7 @@ func TestSessionVerifier_Verify_successfulActivityUpdate_logsNoWarning(t *testin
 	store, plaintext := newVerifierSession(t, true)
 	v := mustSessionVerifier(t, store, WithLogger(logger), WithCookie(DefaultCookieConfig()))
 
-	gotUser, _, err := v.Verify(context.Background(), newVerifierRequest(t, plaintext))
+	gotUser, _, err := v.Verify(t.Context(), newVerifierRequest(t, plaintext))
 	if err != nil || gotUser == nil {
 		t.Fatalf("Verify() = (%v, %v), want a valid user and nil error", gotUser, err)
 	}
@@ -69,7 +69,7 @@ func TestSessionVerifier_Verify_disabledUser_refusesAndLogs(t *testing.T) {
 	store, plaintext := newVerifierSession(t, false)
 	v := mustSessionVerifier(t, store, WithLogger(logger), WithCookie(DefaultCookieConfig()))
 
-	gotUser, _, err := v.Verify(context.Background(), newVerifierRequest(t, plaintext))
+	gotUser, _, err := v.Verify(t.Context(), newVerifierRequest(t, plaintext))
 	if err != nil {
 		t.Fatalf("Verify() error = %v, want nil", err)
 	}
@@ -87,7 +87,7 @@ func TestSessionVerifier_Verify_idleTimeoutOption_expiresOldSession(t *testing.T
 	// A session last active 2h ago is expired under a 1h idle timeout (no auth)
 	// but valid under a 3h idle timeout. This pins the idle-timeout option as
 	// the deciding input through the public Verify path.
-	ctx := context.Background()
+	ctx := t.Context()
 	store := newFakeSessionStore()
 	user := &User{Username: "timeuser", PasswordHash: "x", Role: RoleUser, Enabled: true}
 	if err := store.CreateUser(ctx, user); err != nil {
@@ -237,7 +237,7 @@ func TestSessionVerifier_pruneActivityLocked_belowThreshold_keepsAll(t *testing.
 func TestSessionVerifier_updates_activity(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	user := &User{Username: "active", PasswordHash: "dummy", Role: "user", Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
@@ -320,7 +320,7 @@ func TestSessionVerifier_Verify_storeError_failsClosed(t *testing.T) {
 			v := mustSessionVerifier(t, tc.store, WithCookie(cfg))
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
 			r.AddCookie(&http.Cookie{Name: cfg.EffectiveName(), Value: "token"})
-			user, hash, err := v.Verify(context.Background(), r)
+			user, hash, err := v.Verify(t.Context(), r)
 			if user != nil || hash != "" || err != nil {
 				t.Errorf("Verify() on store error = (%v, %q, %v), want (nil, empty, nil) fail-closed", user, hash, err)
 			}
@@ -363,7 +363,7 @@ func TestSessionVerifier_Verify_activityUpdateError_stillAuthenticates(t *testin
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: cfg.EffectiveName(), Value: "token"})
 
-	user, _, err := v.Verify(context.Background(), r)
+	user, _, err := v.Verify(t.Context(), r)
 	if err != nil || user == nil {
 		t.Fatalf("Verify() = (%v, %v), want a user and nil error despite the activity-write failure", user, err)
 	}
