@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cplieger/auth/v2"
-	"github.com/cplieger/auth/v2/authtest"
+	"github.com/cplieger/auth/v3"
+	"github.com/cplieger/auth/v3/authtest"
 )
 
 func TestMemStore_implements_SessionStore(t *testing.T) {
@@ -19,7 +19,7 @@ func TestMemStore_user_roundtrip(t *testing.T) {
 	u := &auth.User{Username: "test", Role: auth.RoleUser, Enabled: true}
 	store.AddUser(u)
 
-	got, err := store.GetUserByID(t.Context(), u.ID)
+	got, _, err := store.GetUserByID(t.Context(), u.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestMemStore_session_roundtrip(t *testing.T) {
 	now := time.Now()
 	store.AddSession(&auth.Session{TokenHash: "hash1", CreatedAt: now, LastActivity: now})
 
-	sess, err := store.GetSessionByHash(t.Context(), "hash1")
+	sess, _, err := store.GetSessionByHash(t.Context(), "hash1")
 	if err != nil {
 		t.Fatalf("GetSessionByHash: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestMemStore_UpdateSessionActivity(t *testing.T) {
 		t.Fatalf("UpdateSessionActivity: %v", err)
 	}
 
-	sess, err := store.GetSessionByHash(ctx, "hash1")
+	sess, _, err := store.GetSessionByHash(ctx, "hash1")
 	if err != nil {
 		t.Fatalf("GetSessionByHash: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestMemStore_apikey_roundtrip(t *testing.T) {
 
 	store.AddAPIKey(&auth.Key{KeyHash: "keyhash", Label: "test"})
 
-	key, err := store.GetAPIKeyByHash(t.Context(), "keyhash")
+	key, _, err := store.GetAPIKeyByHash(t.Context(), "keyhash")
 	if err != nil {
 		t.Fatalf("GetAPIKeyByHash: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestMemStore_DeleteUserSessions_keepsExcepted(t *testing.T) {
 
 	assertPresent := func(hash string, want bool) {
 		t.Helper()
-		s, err := store.GetSessionByHash(ctx, hash)
+		s, _, err := store.GetSessionByHash(ctx, hash)
 		if err != nil {
 			t.Fatalf("GetSessionByHash(%s): %v", hash, err)
 		}
@@ -121,7 +121,7 @@ func TestMemStore_DeleteSession_removes(t *testing.T) {
 	if err := store.DeleteSession(ctx, "h"); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
-	s, err := store.GetSessionByHash(ctx, "h")
+	s, _, err := store.GetSessionByHash(ctx, "h")
 	if err != nil {
 		t.Fatalf("GetSessionByHash: %v", err)
 	}
@@ -130,18 +130,18 @@ func TestMemStore_DeleteSession_removes(t *testing.T) {
 	}
 }
 
-func TestMemStore_missing_lookups_return_nil_without_error(t *testing.T) {
+func TestMemStore_missing_lookups_report_not_found(t *testing.T) {
 	t.Parallel()
 	store := authtest.NewMemStore()
 	ctx := t.Context()
 
-	if u, err := store.GetUserByID(ctx, 999); err != nil || u != nil {
-		t.Errorf("GetUserByID(absent) = (%+v, %v), want (nil, nil)", u, err)
+	if u, found, err := store.GetUserByID(ctx, 999); err != nil || found || u != nil {
+		t.Errorf("GetUserByID(999) = (%+v, %t, %v), want (nil, false, nil)", u, found, err)
 	}
-	if k, err := store.GetAPIKeyByHash(ctx, "absent"); err != nil || k != nil {
-		t.Errorf("GetAPIKeyByHash(absent) = (%+v, %v), want (nil, nil)", k, err)
+	if k, found, err := store.GetAPIKeyByHash(ctx, "absent"); err != nil || found || k != nil {
+		t.Errorf("GetAPIKeyByHash(%q) = (%+v, %t, %v), want (nil, false, nil)", "absent", k, found, err)
 	}
-	if s, err := store.GetSessionByHash(ctx, "absent"); err != nil || s != nil {
-		t.Errorf("GetSessionByHash(absent) = (%+v, %v), want (nil, nil)", s, err)
+	if s, found, err := store.GetSessionByHash(ctx, "absent"); err != nil || found || s != nil {
+		t.Errorf("GetSessionByHash(%q) = (%+v, %t, %v), want (nil, false, nil)", "absent", s, found, err)
 	}
 }

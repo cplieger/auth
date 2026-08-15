@@ -191,12 +191,12 @@ func TestRotateSessionToken_OldTokenBecomesInvalid(t *testing.T) {
 	}
 
 	// Old token should no longer resolve
-	sess, _ := db.GetSessionByHash(ctx, oldHash)
+	sess, _, _ := db.GetSessionByHash(ctx, oldHash)
 	if sess != nil {
 		t.Fatal("old session should be deleted after rotation")
 	}
 	// New token should resolve
-	sess, _ = db.GetSessionByHash(ctx, newHash)
+	sess, _, _ = db.GetSessionByHash(ctx, newHash)
 	if sess == nil {
 		t.Fatal("new session should exist after rotation")
 	}

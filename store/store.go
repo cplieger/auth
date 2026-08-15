@@ -11,7 +11,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/cplieger/auth/v2"
+	"github.com/cplieger/auth/v3"
 )
 
 // Composite is the full persistence contract implemented by the consumer's
@@ -29,13 +29,24 @@ type Composite interface {
 	OIDCStateStore
 }
 
+// A by-key lookup reports absence through its second result, never through a
+// nil value with a nil error. Absence is a normal answer, not a failure, so it
+// does not travel as an error — but it must be impossible to overlook, and a
+// caller cannot reach the value without also receiving `found`. This mirrors
+// the language's own map-lookup shape (`v, ok := m[k]`), which is the reflex a
+// Go reader already has. A lookup that returned only (*T, error) would pass the
+// habitual `if err != nil` check while handing back nothing, which is how a nil
+// dereference reaches production. Contrast the List/Get*By<Parent> methods,
+// which are SEARCHES: an empty slice with a nil error is the correct answer
+// there and no `found` result is warranted.
+
 // UserStore persists user account data.
 type UserStore interface {
 	CreateUser(ctx context.Context, user *auth.User) error
-	GetUserByID(ctx context.Context, id int64) (*auth.User, error)
-	GetUserByUsername(ctx context.Context, username string) (*auth.User, error)
-	GetUserByEmail(ctx context.Context, email string) (*auth.User, error)
-	GetUserByOIDCSub(ctx context.Context, issuer, sub string) (*auth.User, error)
+	GetUserByID(ctx context.Context, id int64) (user *auth.User, found bool, err error)
+	GetUserByUsername(ctx context.Context, username string) (u *auth.User, found bool, err error)
+	GetUserByEmail(ctx context.Context, email string) (user *auth.User, found bool, err error)
+	GetUserByOIDCSub(ctx context.Context, issuer, sub string) (user *auth.User, found bool, err error)
 	ListUsers(ctx context.Context) ([]auth.User, error)
 	UpdateUser(ctx context.Context, user *auth.User) error
 	DeleteUser(ctx context.Context, id int64) error
@@ -45,7 +56,7 @@ type UserStore interface {
 // SessionPersister persists session data.
 type SessionPersister interface {
 	CreateSession(ctx context.Context, sess *auth.Session) error
-	GetSessionByHash(ctx context.Context, tokenHash string) (*auth.Session, error)
+	GetSessionByHash(ctx context.Context, tokenHash string) (sess *auth.Session, found bool, err error)
 	UpdateSessionActivity(ctx context.Context, tokenHash string, now time.Time) error
 	DeleteSession(ctx context.Context, tokenHash string) error
 	DeleteUserSessions(ctx context.Context, userID int64, exceptHash string) error
@@ -56,7 +67,7 @@ type SessionPersister interface {
 type PasskeyStore interface {
 	CreatePasskey(ctx context.Context, cred *auth.PasskeyCredential) error
 	GetPasskeysByUserID(ctx context.Context, userID int64) ([]auth.PasskeyCredential, error)
-	GetPasskeyByCredentialID(ctx context.Context, credID []byte) (*auth.PasskeyCredential, error)
+	GetPasskeyByCredentialID(ctx context.Context, credID []byte) (cred *auth.PasskeyCredential, found bool, err error)
 	UpdatePasskeyAfterLogin(ctx context.Context, credID []byte, signCount uint32, flags auth.PasskeyFlags) error
 	RenamePasskey(ctx context.Context, id, userID int64, name string) error
 	DeletePasskey(ctx context.Context, id, userID int64) error
@@ -66,7 +77,7 @@ type PasskeyStore interface {
 // KeyStore persists machine-to-machine API keys.
 type KeyStore interface {
 	CreateAPIKey(ctx context.Context, key *auth.Key) error
-	GetAPIKeyByHash(ctx context.Context, hash string) (*auth.Key, error)
+	GetAPIKeyByHash(ctx context.Context, hash string) (key *auth.Key, found bool, err error)
 	ListAPIKeysByUserID(ctx context.Context, userID int64) ([]auth.Key, error)
 	DeleteAPIKey(ctx context.Context, id, userID int64) error
 }

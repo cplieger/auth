@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cplieger/auth/v2"
-	"github.com/cplieger/auth/v2/internal/capture"
+	"github.com/cplieger/auth/v3"
+	"github.com/cplieger/auth/v3/internal/capture"
 	"github.com/go-webauthn/webauthn/webauthn"
 )
 
@@ -31,11 +31,12 @@ type fakeStore struct {
 	updated   *custodyRecord
 }
 
-func (f *fakeStore) GetUserByID(_ context.Context, id int64) (*auth.User, error) {
+func (f *fakeStore) GetUserByID(_ context.Context, id int64) (*auth.User, bool, error) {
 	if f.userErr != nil {
-		return nil, f.userErr
+		return nil, false, f.userErr
 	}
-	return f.users[id], nil
+	u, ok := f.users[id]
+	return u, ok, nil
 }
 
 func (f *fakeStore) GetPasskeysByUserID(_ context.Context, userID int64) ([]auth.PasskeyCredential, error) {

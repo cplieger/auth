@@ -26,34 +26,34 @@ func newFakeSessionStore() *fakeSessionStore {
 	}
 }
 
-func (f *fakeSessionStore) GetSessionByHash(_ context.Context, tokenHash string) (*Session, error) {
+func (f *fakeSessionStore) GetSessionByHash(_ context.Context, tokenHash string) (*Session, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.sessions[tokenHash]
 	if !ok {
-		return nil, nil
+		return nil, false, nil
 	}
-	return s, nil
+	return s, true, nil
 }
 
-func (f *fakeSessionStore) GetUserByID(_ context.Context, id int64) (*User, error) {
+func (f *fakeSessionStore) GetUserByID(_ context.Context, id int64) (*User, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	u, ok := f.users[id]
 	if !ok {
-		return nil, nil
+		return nil, false, nil
 	}
-	return u, nil
+	return u, true, nil
 }
 
-func (f *fakeSessionStore) GetAPIKeyByHash(_ context.Context, hash string) (*Key, error) {
+func (f *fakeSessionStore) GetAPIKeyByHash(_ context.Context, hash string) (*Key, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	k, ok := f.apiKeys[hash]
 	if !ok {
-		return nil, nil
+		return nil, false, nil
 	}
-	return k, nil
+	return k, true, nil
 }
 
 func (f *fakeSessionStore) UpdateSessionActivity(_ context.Context, tokenHash string, now time.Time) error {

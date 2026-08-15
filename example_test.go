@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cplieger/auth/v2"
-	"github.com/cplieger/auth/v2/authtest"
+	"github.com/cplieger/auth/v3"
+	"github.com/cplieger/auth/v3/authtest"
 )
 
 func ExampleHashPassword() {

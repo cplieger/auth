@@ -31,11 +31,11 @@ func GenerateAPIKey(keyPrefix string) (plaintext, hash, displayPrefix, displaySu
 // is not found or has expired.
 func VerifyAPIKey(ctx context.Context, store APIKeyReader, key string) (*Key, error) {
 	hash := APIKeyHash(key)
-	apiKey, err := store.GetAPIKeyByHash(ctx, hash)
+	apiKey, found, err := store.GetAPIKeyByHash(ctx, hash)
 	if err != nil {
 		return nil, err
 	}
-	if apiKey == nil {
+	if !found {
 		return nil, ErrInvalidAPIKey
 	}
 	// Defense in depth: confirm the stored hash exactly equals the computed

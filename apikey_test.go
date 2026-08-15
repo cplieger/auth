@@ -227,8 +227,8 @@ type looseAPIKeyStore struct {
 	key *Key
 }
 
-func (s *looseAPIKeyStore) GetAPIKeyByHash(_ context.Context, _ string) (*Key, error) {
-	return s.key, nil
+func (s *looseAPIKeyStore) GetAPIKeyByHash(_ context.Context, _ string) (*Key, bool, error) {
+	return s.key, s.key != nil, nil
 }
 
 func TestVerifyAPIKey_rejects_hash_mismatch(t *testing.T) {
@@ -288,7 +288,7 @@ func TestProperty_APIKeyRoleInheritance(t *testing.T) {
 			rt.Fatalf("API key user ID mismatch: got %d, want %d", verified.UserID, user.ID)
 		}
 
-		resolvedUser, err := db.GetUserByID(ctx, verified.UserID)
+		resolvedUser, _, err := db.GetUserByID(ctx, verified.UserID)
 		if err != nil {
 			rt.Fatalf("GetUserByID: %v", err)
 		}

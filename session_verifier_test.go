@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cplieger/auth/v2/internal/capture"
+	"github.com/cplieger/auth/v3/internal/capture"
 )
 
 // newVerifierRequest builds a request carrying the session cookie for the
@@ -269,7 +269,7 @@ func TestSessionVerifier_updates_activity(t *testing.T) {
 	}
 
 	// Check that LastActivity was updated
-	sess, _ := db.GetSessionByHash(ctx, hash)
+	sess, _, _ := db.GetSessionByHash(ctx, hash)
 	if sess.LastActivity.Equal(created) {
 		t.Error("LastActivity was not updated after Verify")
 	}
@@ -287,12 +287,12 @@ type failingSessionStore struct {
 	userErr error
 }
 
-func (s *failingSessionStore) GetSessionByHash(context.Context, string) (*Session, error) {
-	return s.sess, s.sessErr
+func (s *failingSessionStore) GetSessionByHash(context.Context, string) (*Session, bool, error) {
+	return s.sess, s.sess != nil, s.sessErr
 }
 
-func (s *failingSessionStore) GetUserByID(context.Context, int64) (*User, error) {
-	return s.user, s.userErr
+func (s *failingSessionStore) GetUserByID(context.Context, int64) (*User, bool, error) {
+	return s.user, s.user != nil, s.userErr
 }
 
 func (s *failingSessionStore) UpdateSessionActivity(context.Context, string, time.Time) error {
@@ -335,12 +335,12 @@ type activityErrStore struct {
 	user *User
 }
 
-func (s activityErrStore) GetSessionByHash(context.Context, string) (*Session, error) {
-	return s.sess, nil
+func (s activityErrStore) GetSessionByHash(context.Context, string) (*Session, bool, error) {
+	return s.sess, s.sess != nil, nil
 }
 
-func (s activityErrStore) GetUserByID(context.Context, int64) (*User, error) {
-	return s.user, nil
+func (s activityErrStore) GetUserByID(context.Context, int64) (*User, bool, error) {
+	return s.user, s.user != nil, nil
 }
 
 func (s activityErrStore) UpdateSessionActivity(context.Context, string, time.Time) error {
