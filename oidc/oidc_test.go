@@ -1,7 +1,6 @@
 package oidc
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -174,7 +173,7 @@ func TestValidateConfig_errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := NewProvider(context.Background(), tt.cfg)
+			_, err := NewProvider(t.Context(), tt.cfg)
 			if err == nil {
 				t.Fatalf("expected error containing %q", tt.wantErr)
 			}

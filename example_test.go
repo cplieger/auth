@@ -84,6 +84,7 @@ func ExampleVerifyAPIKey() {
 		Label:     "ci",
 	})
 
+	// context.Background() (not t.Context()): an Example has no *testing.T.
 	key, err := auth.VerifyAPIKey(context.Background(), store, plaintext)
 	fmt.Println(key != nil, err == nil)
 	// Output: true true

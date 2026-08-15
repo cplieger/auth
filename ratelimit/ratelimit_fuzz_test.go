@@ -1,7 +1,6 @@
 package ratelimit
 
 import (
-	"context"
 	"testing"
 	"time"
 )
@@ -24,7 +23,7 @@ func FuzzRateLimiterAllow(f *testing.F) {
 			PruneInterval: time.Hour, // don't prune during test
 			MaxEntries:    100,
 		}
-		rl := NewRateLimiter(context.Background(), cfg)
+		rl := NewRateLimiter(t.Context(), cfg)
 		defer rl.Stop()
 
 		// Freeze the clock so the 1s windows cannot elapse between the Record

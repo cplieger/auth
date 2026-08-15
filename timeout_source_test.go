@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -19,7 +18,7 @@ var timeoutSourceCookie = CookieConfig{Posture: PostureInsecureLAN, Name: "s"}
 func setupAgedSession(t *testing.T, age time.Duration) (*fakeSessionStore, string) {
 	t.Helper()
 	db := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := t.Context()
 	user := &User{Username: "u", PasswordHash: "dummy", Role: RoleUser, Enabled: true}
 	if err := db.CreateUser(ctx, user); err != nil {
 		t.Fatal(err)
@@ -57,7 +56,7 @@ func TestSessionVerifier_TimeoutSource_ResolvedPerVerify(t *testing.T) {
 		}))
 
 	r := throttleRequest(plaintext)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if user, _, err := v.Verify(ctx, r); err != nil || user != nil {
 		t.Fatalf("Verify under 10m source idle = (%v, %v), want rejected (nil, nil)", user, err)
@@ -81,7 +80,7 @@ func TestSessionVerifier_TimeoutSource_NonPositiveFallsBackToStatic(t *testing.T
 		WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
 		WithTimeoutSource(func() (time.Duration, time.Duration) { return 0, -time.Hour }))
 
-	user, _, err := v.Verify(context.Background(), throttleRequest(plaintext))
+	user, _, err := v.Verify(t.Context(), throttleRequest(plaintext))
 	if err != nil || user == nil {
 		t.Fatalf("Verify with non-positive source = (%v, %v), want valid via static fallback", user, err)
 	}
@@ -125,7 +124,7 @@ func TestSessionVerifier_TimeoutSource_ClampsThrottleToHalfIdle(t *testing.T) {
 			WithTimeoutSource(func() (time.Duration, time.Duration) {
 				return 100 * time.Millisecond, 24 * time.Hour
 			}))
-		ctx := context.Background()
+		ctx := t.Context()
 		r := throttleRequest(plaintext)
 
 		if _, _, err := v.Verify(ctx, r); err != nil {

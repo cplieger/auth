@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"encoding/hex"
 	"testing"
 	"time"
@@ -93,7 +92,7 @@ func TestProperty_SessionCleanupCompleteness(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(rt *rapid.T) {
 		db := newFakeSessionStore()
-		ctx := context.Background()
+		ctx := t.Context()
 
 		idleTimeout := time.Duration(rapid.Int64Range(int64(10*time.Minute), int64(24*time.Hour)).Draw(rt, "idleTimeout"))
 		absTimeout := time.Duration(rapid.Int64Range(int64(10*time.Minute), int64(7*24*time.Hour)).Draw(rt, "absTimeout"))

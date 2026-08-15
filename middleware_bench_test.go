@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -9,7 +8,7 @@ import (
 
 func BenchmarkAuthenticate(b *testing.B) {
 	store := newFakeSessionStore()
-	ctx := context.Background()
+	ctx := b.Context()
 
 	user := &User{Username: "bench", Role: RoleUser, Enabled: true}
 	if err := store.CreateUser(ctx, user); err != nil {

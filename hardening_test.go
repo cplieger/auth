@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
@@ -155,7 +154,7 @@ func TestRotateSessionToken_ProducesNewToken(t *testing.T) {
 
 func TestRotateSessionToken_OldTokenBecomesInvalid(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 	db := newFakeSessionStore()
 
 	user := &User{Username: "rotate-user", PasswordHash: "x", Role: "user", Enabled: true}
