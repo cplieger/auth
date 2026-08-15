@@ -59,11 +59,11 @@ func (v *APIKeyVerifier) Verify(ctx context.Context, r *http.Request) (*User, st
 		}
 		return nil, "", err
 	}
-	user, err := v.store.GetUserByID(ctx, apiKey.UserID)
+	user, found, err := v.store.GetUserByID(ctx, apiKey.UserID)
 	if err != nil {
 		return nil, "", err
 	}
-	if user == nil || !user.Enabled {
+	if !found || !user.Enabled {
 		v.logger().Debug("auth: API key resolved to missing or disabled user", "user_id", apiKey.UserID)
 		return nil, "", ErrUnauthenticated
 	}

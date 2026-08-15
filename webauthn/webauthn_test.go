@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cplieger/auth/v2"
-	"github.com/cplieger/auth/v2/internal/capture"
+	"github.com/cplieger/auth/v3"
+	"github.com/cplieger/auth/v3/internal/capture"
 	"github.com/go-webauthn/webauthn/protocol"
 	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
 )

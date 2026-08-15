@@ -10,11 +10,11 @@ type fakeAPIKeyStore struct {
 	key *Key
 }
 
-func (s *fakeAPIKeyStore) GetAPIKeyByHash(_ context.Context, hash string) (*Key, error) {
+func (s *fakeAPIKeyStore) GetAPIKeyByHash(_ context.Context, hash string) (*Key, bool, error) {
 	if s.key != nil && s.key.KeyHash == hash {
-		return s.key, nil
+		return s.key, true, nil
 	}
-	return nil, nil
+	return nil, false, nil
 }
 
 func FuzzVerifyAPIKey(f *testing.F) {

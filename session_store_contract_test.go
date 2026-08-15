@@ -11,39 +11,48 @@ import (
 func AuthStoreContractSuite(t *testing.T, newStore func(t *testing.T) AuthStore) {
 	t.Helper()
 
-	t.Run("GetSessionByHash_missing_returns_nil_nil", func(t *testing.T) {
+	t.Run("GetSessionByHash_missing_reports_not_found", func(t *testing.T) {
 		t.Parallel()
 		s := newStore(t)
-		sess, err := s.GetSessionByHash(t.Context(), "nonexistent")
+		sess, found, err := s.GetSessionByHash(t.Context(), "nonexistent")
 		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+			t.Fatalf("GetSessionByHash(%q) err = %v, want nil: absence is not a failure", "nonexistent", err)
+		}
+		if found {
+			t.Errorf("GetSessionByHash(%q) found = true, want false", "nonexistent")
 		}
 		if sess != nil {
-			t.Fatalf("expected nil, got %+v", sess)
+			t.Errorf("GetSessionByHash(%q) sess = %+v, want nil", "nonexistent", sess)
 		}
 	})
 
-	t.Run("GetUserByID_missing_returns_nil_nil", func(t *testing.T) {
+	t.Run("GetUserByID_missing_reports_not_found", func(t *testing.T) {
 		t.Parallel()
 		s := newStore(t)
-		user, err := s.GetUserByID(t.Context(), 99999)
+		user, found, err := s.GetUserByID(t.Context(), 99999)
 		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+			t.Fatalf("GetUserByID(99999) err = %v, want nil: absence is not a failure", err)
+		}
+		if found {
+			t.Errorf("GetUserByID(99999) found = true, want false")
 		}
 		if user != nil {
-			t.Fatalf("expected nil, got %+v", user)
+			t.Errorf("GetUserByID(99999) user = %+v, want nil", user)
 		}
 	})
 
-	t.Run("GetAPIKeyByHash_missing_returns_nil_nil", func(t *testing.T) {
+	t.Run("GetAPIKeyByHash_missing_reports_not_found", func(t *testing.T) {
 		t.Parallel()
 		s := newStore(t)
-		key, err := s.GetAPIKeyByHash(t.Context(), "nonexistent")
+		key, found, err := s.GetAPIKeyByHash(t.Context(), "nonexistent")
 		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+			t.Fatalf("GetAPIKeyByHash(%q) err = %v, want nil: absence is not a failure", "nonexistent", err)
+		}
+		if found {
+			t.Errorf("GetAPIKeyByHash(%q) found = true, want false", "nonexistent")
 		}
 		if key != nil {
-			t.Fatalf("expected nil, got %+v", key)
+			t.Errorf("GetAPIKeyByHash(%q) key = %+v, want nil", "nonexistent", key)
 		}
 	})
 }
@@ -70,7 +79,7 @@ func TestFakeSessionStore_roundtrip(t *testing.T) {
 	if err := store.CreateUser(ctx, u); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	got, err := store.GetUserByID(ctx, u.ID)
+	got, _, err := store.GetUserByID(ctx, u.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -83,7 +92,7 @@ func TestFakeSessionStore_roundtrip(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	gotSess, err := store.GetSessionByHash(ctx, "test-hash")
+	gotSess, _, err := store.GetSessionByHash(ctx, "test-hash")
 	if err != nil {
 		t.Fatalf("GetSessionByHash: %v", err)
 	}
@@ -94,7 +103,7 @@ func TestFakeSessionStore_roundtrip(t *testing.T) {
 	if err := store.CreateAPIKey(ctx, &Key{KeyHash: "key-hash", UserID: u.ID, Label: "k"}); err != nil {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
-	gotKey, err := store.GetAPIKeyByHash(ctx, "key-hash")
+	gotKey, _, err := store.GetAPIKeyByHash(ctx, "key-hash")
 	if err != nil {
 		t.Fatalf("GetAPIKeyByHash: %v", err)
 	}
@@ -150,7 +159,7 @@ func TestProperty_SessionInvalidationOnPasswordChange(t *testing.T) {
 
 		remaining := 0
 		for _, h := range hashes {
-			s, err := db.GetSessionByHash(ctx, h)
+			s, _, err := db.GetSessionByHash(ctx, h)
 			if err != nil {
 				rt.Fatalf("GetSessionByHash(%s): %v", h, err)
 			}

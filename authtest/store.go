@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cplieger/auth/v2"
+	"github.com/cplieger/auth/v3"
 )
 
 // MemStore is an in-memory implementation of auth interfaces for testing.
@@ -29,41 +29,43 @@ func NewMemStore() *MemStore {
 	}
 }
 
-// GetSessionByHash returns the session stored under tokenHash, or (nil, nil)
-// if no such session exists.
-func (m *MemStore) GetSessionByHash(_ context.Context, tokenHash string) (*auth.Session, error) {
+// GetSessionByHash returns the session stored under tokenHash. found is false
+// when no such session exists; err is always nil.
+func (m *MemStore) GetSessionByHash(_ context.Context, tokenHash string) (sess *auth.Session, found bool, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, ok := m.sessions[tokenHash]
 	if !ok {
-		return nil, nil
+		return nil, false, nil
 	}
 	cp := *s
-	return &cp, nil
+	return &cp, true, nil
 }
 
-// GetUserByID returns the user with the given id, or (nil, nil) if absent.
-func (m *MemStore) GetUserByID(_ context.Context, id int64) (*auth.User, error) {
+// GetUserByID returns the user with the given id. found is false when the user
+// is absent; err is always nil.
+func (m *MemStore) GetUserByID(_ context.Context, id int64) (user *auth.User, found bool, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	u, ok := m.users[id]
 	if !ok {
-		return nil, nil
+		return nil, false, nil
 	}
 	cp := *u
-	return &cp, nil
+	return &cp, true, nil
 }
 
-// GetAPIKeyByHash returns the API key stored under hash, or (nil, nil) if absent.
-func (m *MemStore) GetAPIKeyByHash(_ context.Context, hash string) (*auth.Key, error) {
+// GetAPIKeyByHash returns the API key stored under hash. found is false when
+// the key is absent; err is always nil.
+func (m *MemStore) GetAPIKeyByHash(_ context.Context, hash string) (key *auth.Key, found bool, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	k, ok := m.apiKeys[hash]
 	if !ok {
-		return nil, nil
+		return nil, false, nil
 	}
 	cp := *k
-	return &cp, nil
+	return &cp, true, nil
 }
 
 // UpdateSessionActivity sets LastActivity to now for the session identified by

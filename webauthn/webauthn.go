@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cplieger/auth/v2"
+	"github.com/cplieger/auth/v3"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 )
@@ -33,7 +33,7 @@ const CeremonyTimeout = 5 * time.Minute
 type Store interface {
 	GetPasskeysByUserID(ctx context.Context, userID int64) ([]auth.PasskeyCredential, error)
 	UpdatePasskeyAfterLogin(ctx context.Context, credID []byte, signCount uint32, flags auth.PasskeyFlags) error
-	GetUserByID(ctx context.Context, id int64) (*auth.User, error)
+	GetUserByID(ctx context.Context, id int64) (user *auth.User, found bool, err error)
 }
 
 const (
@@ -360,8 +360,8 @@ func storeUserFinder(ctx context.Context, store Store) func(rawID, userHandle []
 		if userID <= 0 {
 			return nil, errors.New("invalid user handle")
 		}
-		user, err := store.GetUserByID(ctx, userID)
-		if err != nil || user == nil {
+		user, found, err := store.GetUserByID(ctx, userID)
+		if err != nil || !found {
 			return nil, errors.New("user not found")
 		}
 		creds, err := store.GetPasskeysByUserID(ctx, user.ID)
