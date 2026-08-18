@@ -24,9 +24,9 @@ func TestValidatePasswordContext(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := ValidatePasswordContext(tc.password, tc.username, tc.forbiddenWords)
+			err := ValidatePasswordContext(tc.password, PasswordContext{Username: tc.username, ForbiddenWords: tc.forbiddenWords})
 			if (err != nil) != tc.wantErr {
-				t.Errorf("ValidatePasswordContext(%q, %q, %v) err = %v, wantErr = %v",
+				t.Errorf("ValidatePasswordContext(%q, {Username: %q, ForbiddenWords: %v}) err = %v, wantErr = %v",
 					tc.password, tc.username, tc.forbiddenWords, err, tc.wantErr)
 			}
 		})

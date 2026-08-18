@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cplieger/auth/v3"
-	"github.com/cplieger/auth/v3/authtest"
+	"github.com/cplieger/auth/v4"
+	"github.com/cplieger/auth/v4/authtest"
 )
 
 func ExampleHashPassword() {
@@ -22,8 +22,16 @@ func ExampleHashPassword() {
 	// Output: true
 }
 
-func ExampleValidatePasswordLength() {
-	err := auth.ValidatePasswordLength("short", true)
+func ExampleValidateMultiFactorPasswordLength() {
+	// Multi-factor arm: password login is not the sole factor, minimum 8.
+	err := auth.ValidateMultiFactorPasswordLength("okpass8!")
+	fmt.Println(err == nil)
+	// Output: true
+}
+
+func ExampleValidateSoloPasswordLength() {
+	// Solo arm: password login alone grants access, minimum 15.
+	err := auth.ValidateSoloPasswordLength("short")
 	fmt.Println(err != nil)
 	// Output: true
 }
@@ -54,7 +62,7 @@ func ExampleAuthenticator_RequireAuth() {
 		Enabled:  true,
 	})
 
-	authn, err := auth.NewAuthenticator(
+	authn, err := auth.New(
 		store,
 		auth.WithIdleTimeout(1*time.Hour),
 		auth.WithAbsTimeout(24*time.Hour),

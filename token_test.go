@@ -18,16 +18,16 @@ func TestRotateSessionToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	if gotOldHash != oldHash {
-		t.Fatal("old hash mismatch")
+		t.Errorf("RotateSessionToken() oldHash = %q, want %q", gotOldHash, oldHash)
 	}
 	if newPlain == oldPlain {
-		t.Fatal("new token should differ from old")
+		t.Error("RotateSessionToken() new plaintext equals the old one, want a fresh token")
 	}
 	if newHash == oldHash {
-		t.Fatal("new hash should differ from old")
+		t.Error("RotateSessionToken() new hash equals the old one, want a fresh hash")
 	}
-	if SessionHash(newPlain) != newHash {
-		t.Fatal("new hash should match hash of new plaintext")
+	if got := SessionHash(newPlain); got != newHash {
+		t.Errorf("SessionHash(new plaintext) = %q, want the returned new hash %q", got, newHash)
 	}
 }
 
@@ -82,15 +82,24 @@ func TestCSRFToken_WrongKey(t *testing.T) {
 
 func TestCSRFToken_EmptyKey(t *testing.T) {
 	t.Parallel()
-	if _, err := CSRFToken(nil, "sess"); err == nil {
-		t.Fatal("CSRFToken(nil key) = nil error, want error")
-	}
-	if _, err := CSRFToken([]byte{}, "sess"); err == nil {
-		t.Fatal("CSRFToken(empty key) = nil error, want error")
-	}
-	if err := VerifyCSRFToken(nil, "sess", "anything", time.Hour); err != ErrTokenInvalid {
-		t.Fatalf("VerifyCSRFToken(nil key) = %v, want ErrTokenInvalid", err)
-	}
+	t.Run("nil key rejected", func(t *testing.T) {
+		t.Parallel()
+		if _, err := CSRFToken(nil, "sess"); err == nil {
+			t.Error("CSRFToken(nil key) = nil error, want error")
+		}
+	})
+	t.Run("empty key rejected", func(t *testing.T) {
+		t.Parallel()
+		if _, err := CSRFToken([]byte{}, "sess"); err == nil {
+			t.Error("CSRFToken(empty key) = nil error, want error")
+		}
+	})
+	t.Run("verify with nil key rejected", func(t *testing.T) {
+		t.Parallel()
+		if err := VerifyCSRFToken(nil, "sess", "anything", time.Hour); err != ErrTokenInvalid {
+			t.Errorf("VerifyCSRFToken(nil key) = %v, want ErrTokenInvalid", err)
+		}
+	})
 }
 
 func TestCSRFToken_NegativeMaxAge_expired(t *testing.T) {
@@ -142,10 +151,10 @@ func TestGenerateOpaqueToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(plain) != 64 { // 32 bytes hex-encoded
-		t.Fatalf("expected 64 char plaintext, got %d", len(plain))
+		t.Errorf("GenerateOpaqueToken() plaintext length = %d, want 64", len(plain))
 	}
-	if HexSHA256(plain) != hash {
-		t.Fatal("hash should match SHA256 of plaintext")
+	if got := HexSHA256(plain); got != hash {
+		t.Errorf("HexSHA256(plaintext) = %q, want the returned hash %q", got, hash)
 	}
 }
 

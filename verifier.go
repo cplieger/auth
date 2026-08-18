@@ -18,7 +18,7 @@ import (
 // an error, for a credential it cannot positively authenticate. The built-in
 // verifiers differ deliberately: SessionVerifier treats every session problem as
 // (nil, "", nil) and falls through, whereas APIKeyVerifier returns
-// ErrUnauthenticated for a present-but-invalid key. In the default NewAuthenticator
+// ErrUnauthenticated for a present-but-invalid key. In the default [New]
 // chain APIKeyVerifier runs last, so this is unobservable; but a custom
 // WithVerifiers chain that places an error-returning verifier before others will
 // reject a request (HTTP 401) whose earlier-type credential is present-but-invalid

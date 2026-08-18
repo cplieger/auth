@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cplieger/auth/v3"
+	"github.com/cplieger/auth/v4"
 	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/go-webauthn/webauthn/webauthn"
+	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
 )
 
 // CeremonyTimeout is the maximum duration a user has to complete an auth ceremony.
@@ -26,10 +26,10 @@ const CeremonyTimeout = 5 * time.Minute
 
 // Store is the narrow store interface consumed by [CompleteLogin]: user and
 // credential lookup to resolve the asserting account from its user handle,
-// and the post-login credential-custody write. Any implementation of
-// store.Composite satisfies it. Consumers composing the lower-level ceremony
-// helpers ([BeginLogin], [FinishLogin]) with their own user finder do not
-// need it.
+// and the post-login credential-custody write. A storage layer implementing
+// [auth.UserStore] and [auth.PasskeyStore] satisfies it. Consumers composing
+// the lower-level ceremony helpers ([BeginLogin], [FinishLogin]) with their
+// own user finder do not need it.
 type Store interface {
 	GetPasskeysByUserID(ctx context.Context, userID int64) ([]auth.PasskeyCredential, error)
 	UpdatePasskeyAfterLogin(ctx context.Context, credID []byte, signCount uint32, flags auth.PasskeyFlags) error
@@ -42,16 +42,16 @@ const (
 	aaguidChromeOnMac    = "adce0002-35bc-c60a-648b-0b25f1f05503"
 )
 
-// User adapts auth.User + credentials to the webauthn.User interface.
+// User adapts auth.User + credentials to the gowebauthn.User interface.
 type User struct {
 	AuthUser    *auth.User
 	Credentials []auth.PasskeyCredential
 }
 
-// NewWebAuthnUser returns a User with the given user and credentials.
-func NewWebAuthnUser(user *auth.User, creds []auth.PasskeyCredential) (*User, error) {
+// NewUser returns a User with the given user and credentials.
+func NewUser(user *auth.User, creds []auth.PasskeyCredential) (*User, error) {
 	if user == nil {
-		return nil, errors.New("auth/webauthn: NewWebAuthnUser called with nil user")
+		return nil, errors.New("auth/webauthn: NewUser called with nil user")
 	}
 	return &User{AuthUser: user, Credentials: creds}, nil
 }
@@ -76,11 +76,11 @@ func (u *User) WebAuthnDisplayName() string {
 	return u.AuthUser.Username
 }
 
-// WebAuthnCredentials converts the stored credentials to webauthn.Credential.
-func (u *User) WebAuthnCredentials() []webauthn.Credential {
-	creds := make([]webauthn.Credential, len(u.Credentials))
+// WebAuthnCredentials converts the stored credentials to gowebauthn.Credential.
+func (u *User) WebAuthnCredentials() []gowebauthn.Credential {
+	creds := make([]gowebauthn.Credential, len(u.Credentials))
 	for i := range u.Credentials {
-		creds[i] = APICredentialToWebAuthn(&u.Credentials[i])
+		creds[i] = CredentialFromAPI(&u.Credentials[i])
 	}
 	return creds
 }
@@ -184,8 +184,9 @@ func PasskeyFriendlyName(aaguid []byte, existingNames []string) string {
 	return fmt.Sprintf("%s %d", baseName, suffix)
 }
 
-// APICredentialToWebAuthn converts a PasskeyCredential to a webauthn.Credential.
-func APICredentialToWebAuthn(c *auth.PasskeyCredential) webauthn.Credential {
+// CredentialFromAPI converts a PasskeyCredential to a gowebauthn.Credential
+// (the inverse of [CredentialToAPI]).
+func CredentialFromAPI(c *auth.PasskeyCredential) gowebauthn.Credential {
 	var transports []protocol.AuthenticatorTransport
 	if c.Transport != "" {
 		for t := range strings.SplitSeq(c.Transport, ",") {
@@ -193,18 +194,18 @@ func APICredentialToWebAuthn(c *auth.PasskeyCredential) webauthn.Credential {
 		}
 	}
 
-	cred := webauthn.Credential{
+	cred := gowebauthn.Credential{
 		ID:              c.CredentialID,
 		PublicKey:       c.PublicKey,
 		AttestationType: c.AttestationType,
 		Transport:       transports,
-		Flags: webauthn.CredentialFlags{
+		Flags: gowebauthn.CredentialFlags{
 			UserPresent:    c.UserPresent,
 			UserVerified:   c.UserVerified,
 			BackupEligible: c.BackupEligible,
 			BackupState:    c.BackupState,
 		},
-		Authenticator: webauthn.Authenticator{
+		Authenticator: gowebauthn.Authenticator{
 			AAGUID:       c.AAGUID,
 			SignCount:    c.SignCount,
 			CloneWarning: c.CloneWarning,
@@ -223,8 +224,8 @@ func APICredentialToWebAuthn(c *auth.PasskeyCredential) webauthn.Credential {
 	return cred
 }
 
-// CredentialToAPI converts a webauthn.Credential to a PasskeyCredential.
-func CredentialToAPI(c *webauthn.Credential, userID int64, name string) *auth.PasskeyCredential {
+// CredentialToAPI converts a gowebauthn.Credential to a PasskeyCredential.
+func CredentialToAPI(c *gowebauthn.Credential, userID int64, name string) *auth.PasskeyCredential {
 	transports := make([]string, 0, len(c.Transport))
 	for _, t := range c.Transport {
 		transports = append(transports, string(t))
@@ -261,19 +262,42 @@ func CredentialToAPI(c *webauthn.Credential, userID int64, name string) *auth.Pa
 	}
 }
 
-// NewWebAuthn creates a configured webauthn.WebAuthn instance.
-func NewWebAuthn(rpID, rpDisplayName string, rpOrigins []string) (*webauthn.WebAuthn, error) {
-	return webauthn.New(&webauthn.Config{
-		RPID:          rpID,
-		RPDisplayName: rpDisplayName,
-		RPOrigins:     rpOrigins,
-		Timeouts: webauthn.TimeoutsConfig{
-			Login: webauthn.TimeoutConfig{
+// RPConfig identifies the relying party that a [New]-constructed
+// gowebauthn.WebAuthn serves. The ID and display name would otherwise sit as
+// adjacent same-typed string parameters, where a silent swap ships a broken
+// RP ID; the field names make each value's role explicit at the call site.
+type RPConfig struct {
+	// ID is the relying party identifier, an effective domain
+	// (e.g. "example.com").
+	ID string
+	// DisplayName is the human-readable relying party name shown by
+	// authenticators.
+	DisplayName string
+	// Origins are the allowed browser origins for ceremonies
+	// (e.g. "https://example.com").
+	Origins []string
+}
+
+// New creates a configured gowebauthn.WebAuthn instance for the given
+// relying party. An RPConfig with an empty ID is rejected here with an error
+// naming the field: upstream go-webauthn constructs successfully without an
+// RP ID and then fails every ceremony with an RP-hash mismatch, which defeats
+// this wrapper's purpose of making the relying party legible at construction.
+func New(rp RPConfig) (*gowebauthn.WebAuthn, error) {
+	if rp.ID == "" {
+		return nil, errors.New("auth/webauthn: RPConfig.ID is required")
+	}
+	return gowebauthn.New(&gowebauthn.Config{
+		RPID:          rp.ID,
+		RPDisplayName: rp.DisplayName,
+		RPOrigins:     rp.Origins,
+		Timeouts: gowebauthn.TimeoutsConfig{
+			Login: gowebauthn.TimeoutConfig{
 				Enforce:    true,
 				Timeout:    CeremonyTimeout,
 				TimeoutUVD: CeremonyTimeout,
 			},
-			Registration: webauthn.TimeoutConfig{
+			Registration: gowebauthn.TimeoutConfig{
 				Enforce:    true,
 				Timeout:    CeremonyTimeout,
 				TimeoutUVD: CeremonyTimeout,
@@ -283,39 +307,39 @@ func NewWebAuthn(rpID, rpDisplayName string, rpOrigins []string) (*webauthn.WebA
 }
 
 // BeginRegistration starts a WebAuthn registration ceremony.
-func BeginRegistration(wa *webauthn.WebAuthn, user *User) (*protocol.CredentialCreation, *webauthn.SessionData, error) {
+func BeginRegistration(wa *gowebauthn.WebAuthn, user *User) (*protocol.CredentialCreation, *gowebauthn.SessionData, error) {
 	return wa.BeginRegistration(user,
-		webauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
+		gowebauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
 			ResidentKey:      protocol.ResidentKeyRequirementRequired,
 			UserVerification: protocol.VerificationRequired,
 		}),
-		webauthn.WithExclusions(webauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()),
-		webauthn.WithExtensions(map[string]any{"credProps": true}),
+		gowebauthn.WithExclusions(gowebauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()),
+		gowebauthn.WithExtensions(map[string]any{"credProps": true}),
 	)
 }
 
 // FinishRegistration completes a WebAuthn registration ceremony.
-func FinishRegistration(wa *webauthn.WebAuthn, user *User, sessionData *webauthn.SessionData, response *http.Request) (*webauthn.Credential, error) {
+func FinishRegistration(wa *gowebauthn.WebAuthn, user *User, sessionData *gowebauthn.SessionData, response *http.Request) (*gowebauthn.Credential, error) {
 	return wa.FinishRegistration(user, *sessionData, response)
 }
 
 // BeginLogin starts a WebAuthn assertion ceremony (discoverable login).
-func BeginLogin(wa *webauthn.WebAuthn) (*protocol.CredentialAssertion, *webauthn.SessionData, error) {
+func BeginLogin(wa *gowebauthn.WebAuthn) (*protocol.CredentialAssertion, *gowebauthn.SessionData, error) {
 	return wa.BeginDiscoverableLogin(
-		webauthn.WithUserVerification(protocol.VerificationRequired),
+		gowebauthn.WithUserVerification(protocol.VerificationRequired),
 	)
 }
 
 // BeginConditionalLogin starts a WebAuthn assertion ceremony with conditional
 // mediation, enabling browser autofill UI for passkeys.
-func BeginConditionalLogin(wa *webauthn.WebAuthn) (*protocol.CredentialAssertion, *webauthn.SessionData, error) {
+func BeginConditionalLogin(wa *gowebauthn.WebAuthn) (*protocol.CredentialAssertion, *gowebauthn.SessionData, error) {
 	return wa.BeginDiscoverableMediatedLogin(protocol.MediationConditional,
-		webauthn.WithUserVerification(protocol.VerificationRequired),
+		gowebauthn.WithUserVerification(protocol.VerificationRequired),
 	)
 }
 
 // FinishLogin completes a WebAuthn assertion ceremony (discoverable login).
-func FinishLogin(wa *webauthn.WebAuthn, sessionData *webauthn.SessionData, response *http.Request, userFinder func(rawID, userHandle []byte) (webauthn.User, error)) (webauthn.User, *webauthn.Credential, error) {
+func FinishLogin(wa *gowebauthn.WebAuthn, sessionData *gowebauthn.SessionData, response *http.Request, userFinder func(rawID, userHandle []byte) (gowebauthn.User, error)) (gowebauthn.User, *gowebauthn.Credential, error) {
 	return wa.FinishPasskeyLogin(userFinder, *sessionData, response)
 }
 
@@ -335,7 +359,7 @@ func FinishLogin(wa *webauthn.WebAuthn, sessionData *webauthn.SessionData, respo
 // a credential deleted server-side surfaces as a wrapped
 // [protocol.ErrorUnknownCredential], matchable with errors.As so callers can
 // signal the client to forget the stale passkey.
-func CompleteLogin(ctx context.Context, wa *webauthn.WebAuthn, store Store, sessionData *webauthn.SessionData, r *http.Request) (*auth.User, *webauthn.Credential, error) {
+func CompleteLogin(ctx context.Context, wa *gowebauthn.WebAuthn, store Store, sessionData *gowebauthn.SessionData, r *http.Request) (*auth.User, *gowebauthn.Credential, error) {
 	resolved, cred, err := FinishLogin(wa, sessionData, r, storeUserFinder(ctx, store))
 	if err != nil {
 		return nil, nil, fmt.Errorf("webauthn: assertion ceremony failed: %w", err)
@@ -354,8 +378,8 @@ func CompleteLogin(ctx context.Context, wa *webauthn.WebAuthn, store Store, sess
 // ceremony uses to resolve the asserting user and their registered passkeys
 // from the store. The returned errors are deliberately generic so an
 // assertion response never reveals whether a particular user handle exists.
-func storeUserFinder(ctx context.Context, store Store) func(rawID, userHandle []byte) (webauthn.User, error) {
-	return func(_, userHandle []byte) (webauthn.User, error) {
+func storeUserFinder(ctx context.Context, store Store) func(rawID, userHandle []byte) (gowebauthn.User, error) {
+	return func(_, userHandle []byte) (gowebauthn.User, error) {
 		userID, _ := binary.Varint(userHandle)
 		if userID <= 0 {
 			return nil, errors.New("invalid user handle")
@@ -368,7 +392,7 @@ func storeUserFinder(ctx context.Context, store Store) func(rawID, userHandle []
 		if err != nil {
 			return nil, errors.New("get passkeys failed")
 		}
-		return NewWebAuthnUser(user, creds)
+		return NewUser(user, creds)
 	}
 }
 
@@ -378,7 +402,7 @@ func storeUserFinder(ctx context.Context, store Store) func(rawID, userHandle []
 // indicator) that must survive into storage to be visible to later ceremonies
 // and audits. Best-effort by design; a failure is logged at Warn and never
 // fails the login.
-func persistLoginCustody(ctx context.Context, store Store, cred *webauthn.Credential) {
+func persistLoginCustody(ctx context.Context, store Store, cred *gowebauthn.Credential) {
 	err := store.UpdatePasskeyAfterLogin(ctx, cred.ID, cred.Authenticator.SignCount, auth.PasskeyFlags{
 		UserPresent:    cred.Flags.UserPresent,
 		UserVerified:   cred.Flags.UserVerified,

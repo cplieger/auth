@@ -2,6 +2,7 @@ package ratelimit
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -18,18 +19,18 @@ import (
 func TestProperty_RateLimiterSlidingWindow(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(t *rapid.T) {
-		ip := fmt.Sprintf("%d.%d.%d.%d",
+		ip := ClientIP(fmt.Sprintf("%d.%d.%d.%d",
 			rapid.IntRange(1, 255).Draw(t, "ip1"),
 			rapid.IntRange(0, 255).Draw(t, "ip2"),
 			rapid.IntRange(0, 255).Draw(t, "ip3"),
 			rapid.IntRange(1, 254).Draw(t, "ip4"),
-		)
-		username := rapid.StringN(3, 32, -1).Draw(t, "username")
+		))
+		username := Username(rapid.StringN(3, 32, -1).Draw(t, "username"))
 
 		now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 
-		rl := NewRateLimiter(t.Context(), DefaultConfig())
-		defer rl.Stop()
+		rl := New(t.Context(), DefaultConfig())
+		defer rl.Shutdown(context.Background())
 		rl.nowFunc = func() time.Time { return now }
 
 		for i := range rl.ipLimit {
@@ -55,12 +56,12 @@ func TestProperty_RateLimiterSlidingWindow(t *testing.T) {
 		}
 
 		now = time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
-		rl2 := NewRateLimiter(t.Context(), DefaultConfig())
-		defer rl2.Stop()
+		rl2 := New(t.Context(), DefaultConfig())
+		defer rl2.Shutdown(context.Background())
 		rl2.nowFunc = func() time.Time { return now }
 
 		for i := range rl2.acctLimit {
-			diffIP := fmt.Sprintf("10.%d.%d.%d", i/65536%256, i/256%256, i%256+1)
+			diffIP := ClientIP(fmt.Sprintf("10.%d.%d.%d", i/65536%256, i/256%256, i%256+1))
 			allowed, _ := rl2.Allow(diffIP, username)
 			if !allowed {
 				t.Fatalf("account attempt %d: should be allowed (under account limit)", i+1)
@@ -68,7 +69,7 @@ func TestProperty_RateLimiterSlidingWindow(t *testing.T) {
 			rl2.Record(diffIP, username)
 		}
 
-		freshIP := "172.16.0.1"
+		freshIP := ClientIP("172.16.0.1")
 		allowed, retryAfter = rl2.Allow(freshIP, username)
 		if allowed {
 			t.Fatal("account attempt 101: should be blocked (account limit exceeded)")
@@ -84,8 +85,8 @@ func TestProperty_RateLimiterSlidingWindow(t *testing.T) {
 		}
 
 		now = time.Date(2025, 9, 1, 12, 0, 0, 0, time.UTC)
-		rl3 := NewRateLimiter(t.Context(), DefaultConfig())
-		defer rl3.Stop()
+		rl3 := New(t.Context(), DefaultConfig())
+		defer rl3.Shutdown(context.Background())
 		rl3.nowFunc = func() time.Time { return now }
 
 		for range rl3.ipLimit {
@@ -104,8 +105,8 @@ func TestRateLimiter_prune_removes_stale_entries(t *testing.T) {
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	rl := NewRateLimiter(t.Context(), DefaultConfig())
-	defer rl.Stop()
+	rl := New(t.Context(), DefaultConfig())
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	rl.Record("10.0.0.1", "alice")
@@ -135,8 +136,8 @@ func TestRateLimiter_prune_keeps_active_entries(t *testing.T) {
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	rl := NewRateLimiter(t.Context(), DefaultConfig())
-	defer rl.Stop()
+	rl := New(t.Context(), DefaultConfig())
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	rl.Record("10.0.0.1", "alice")
@@ -158,8 +159,8 @@ func TestRateLimiter_empty_username_skips_account_tracking(t *testing.T) {
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	rl := NewRateLimiter(t.Context(), DefaultConfig())
-	defer rl.Stop()
+	rl := New(t.Context(), DefaultConfig())
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	rl.Record("10.0.0.1", "")
@@ -190,12 +191,12 @@ func TestRateLimiter_Record_caps_ip_entries(t *testing.T) {
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	rl := NewRateLimiter(t.Context(), DefaultConfig())
-	defer rl.Stop()
+	rl := New(t.Context(), DefaultConfig())
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	for i := range rl.maxEntries {
-		ip := fmt.Sprintf("10.%d.%d.%d", i/65536%256, i/256%256, i%256+1)
+		ip := ClientIP(fmt.Sprintf("10.%d.%d.%d", i/65536%256, i/256%256, i%256+1))
 		rl.Record(ip, "")
 	}
 
@@ -228,12 +229,12 @@ func TestRateLimiter_Record_caps_account_entries(t *testing.T) {
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	rl := NewRateLimiter(t.Context(), DefaultConfig())
-	defer rl.Stop()
+	rl := New(t.Context(), DefaultConfig())
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	for i := range rl.maxEntries {
-		username := fmt.Sprintf("user%d", i)
+		username := Username(fmt.Sprintf("user%d", i))
 		rl.Record("10.0.0.1", username)
 	}
 
@@ -267,11 +268,11 @@ func TestRateLimiter_retryAfter_returns_correct_duration(t *testing.T) {
 	start := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 	now := start
 
-	rl := NewRateLimiter(t.Context(), DefaultConfig())
-	defer rl.Stop()
+	rl := New(t.Context(), DefaultConfig())
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
-	ip := "10.0.0.1"
+	ip := ClientIP("10.0.0.1")
 
 	for range rl.ipLimit {
 		rl.Record(ip, "")
@@ -330,8 +331,8 @@ func TestAllow(t *testing.T) {
 	tests := []struct {
 		name    string
 		setup   func(rl *RateLimiter, now *time.Time)
-		ip      string
-		user    string
+		ip      ClientIP
+		user    Username
 		allowed bool
 	}{
 		{
@@ -390,7 +391,7 @@ func TestAllow(t *testing.T) {
 			name: "account limit reached all IPs blocked",
 			setup: func(rl *RateLimiter, _ *time.Time) {
 				for i := range rl.acctLimit {
-					ip := fmt.Sprintf("10.%d.%d.%d", i/65536%256, i/256%256, i%256+1)
+					ip := ClientIP(fmt.Sprintf("10.%d.%d.%d", i/65536%256, i/256%256, i%256+1))
 					rl.Record(ip, "alice")
 				}
 			},
@@ -404,8 +405,8 @@ func TestAllow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
-			rl := NewRateLimiter(t.Context(), DefaultConfig())
-			defer rl.Stop()
+			rl := New(t.Context(), DefaultConfig())
+			defer rl.Shutdown(context.Background())
 			rl.nowFunc = func() time.Time { return now }
 
 			tt.setup(rl, &now)
@@ -430,8 +431,8 @@ func TestRateLimiter_prune_concurrent(t *testing.T) {
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 	var mu sync.Mutex
 
-	rl := NewRateLimiter(t.Context(), DefaultConfig())
-	defer rl.Stop()
+	rl := New(t.Context(), DefaultConfig())
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time {
 		mu.Lock()
 		defer mu.Unlock()
@@ -444,8 +445,8 @@ func TestRateLimiter_prune_concurrent(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			ip := fmt.Sprintf("10.0.%d.1", id)
-			user := fmt.Sprintf("user-%d", id)
+			ip := ClientIP(fmt.Sprintf("10.0.%d.1", id))
+			user := Username(fmt.Sprintf("user-%d", id))
 			for range 200 {
 				rl.Record(ip, user)
 			}
@@ -456,8 +457,8 @@ func TestRateLimiter_prune_concurrent(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			ip := fmt.Sprintf("10.0.%d.1", id)
-			user := fmt.Sprintf("user-%d", id)
+			ip := ClientIP(fmt.Sprintf("10.0.%d.1", id))
+			user := Username(fmt.Sprintf("user-%d", id))
 			for range 200 {
 				allowed, retryAfter := rl.Allow(ip, user)
 				if !allowed && retryAfter <= 0 {
@@ -483,12 +484,12 @@ func TestRateLimiter_Reset_clears_counters(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
-	rl := NewRateLimiter(t.Context(), DefaultConfig())
-	defer rl.Stop()
+	rl := New(t.Context(), DefaultConfig())
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
-	ip := "10.0.0.1"
-	username := "alice"
+	ip := ClientIP("10.0.0.1")
+	username := Username("alice")
 
 	// Fill up to the limit
 	for range rl.ipLimit {
@@ -515,11 +516,11 @@ func TestRateLimiter_Reset_empty_username(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
-	rl := NewRateLimiter(t.Context(), DefaultConfig())
-	defer rl.Stop()
+	rl := New(t.Context(), DefaultConfig())
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
-	ip := "10.0.0.1"
+	ip := ClientIP("10.0.0.1")
 	for range rl.ipLimit {
 		rl.Record(ip, "")
 	}
@@ -549,8 +550,8 @@ func TestRateLimiter_Reset_clears_account_window(t *testing.T) {
 		PruneInterval: time.Hour,
 		MaxEntries:    100,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	const ip, user = "10.0.0.1", "alice"
@@ -569,14 +570,14 @@ func TestRateLimiter_Reset_clears_account_window(t *testing.T) {
 }
 
 func BenchmarkRateLimiter_parallel(b *testing.B) {
-	rl := NewRateLimiter(b.Context(), DefaultConfig())
-	defer rl.Stop()
+	rl := New(b.Context(), DefaultConfig())
+	defer rl.Shutdown(context.Background())
 
 	b.RunParallel(func(pb *testing.PB) {
 		i := 0
 		for pb.Next() {
-			ip := fmt.Sprintf("10.0.%d.%d", (i/256)%256, i%256+1)
-			user := fmt.Sprintf("user-%d", i%100)
+			ip := ClientIP(fmt.Sprintf("10.0.%d.%d", (i/256)%256, i%256+1))
+			user := Username(fmt.Sprintf("user-%d", i%100))
 			rl.Allow(ip, user)
 			rl.Record(ip, user)
 			i++
@@ -677,8 +678,8 @@ func TestRateLimiter_nonpositive_IPLimit_fails_closed(t *testing.T) {
 		PruneInterval: time.Hour,
 		MaxEntries:    100,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	if allowed, _ := rl.Allow("10.0.0.1", ""); !allowed {
@@ -706,8 +707,8 @@ func TestRateLimiter_eviction_drops_least_recently_active(t *testing.T) {
 		PruneInterval: time.Hour,
 		MaxEntries:    2,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	rl.Record("stale", "")
@@ -751,8 +752,8 @@ func TestRateLimiter_eviction_protects_at_limit_entry(t *testing.T) {
 		PruneInterval: time.Hour,
 		MaxEntries:    2,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	// "blocked" reaches the limit at t0, giving it the oldest last-activity
@@ -807,8 +808,8 @@ func TestRateLimiter_eviction_all_at_limit_falls_back_to_lru(t *testing.T) {
 		PruneInterval: time.Hour,
 		MaxEntries:    2,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	// With IPLimit=1 a single Record puts each key at its limit, so no harmless
@@ -852,7 +853,7 @@ func TestRateLimiter_pruneLoop_prunes_stale_on_tick(t *testing.T) {
 			PruneInterval: time.Minute,
 			MaxEntries:    100,
 		}
-		rl := NewRateLimiter(t.Context(), cfg)
+		rl := New(t.Context(), cfg)
 
 		rl.Record("10.0.0.1", "alice")
 
@@ -869,7 +870,20 @@ func TestRateLimiter_pruneLoop_prunes_stale_on_tick(t *testing.T) {
 			t.Errorf("pruneLoop tick left ip=%d acct=%d windows, want 0,0", ipN, acctN)
 		}
 
-		rl.Stop()
+		// Shutdown must signal the prune goroutine AND wait for its exit: a nil
+		// return here is the C20 contract that "stopped" means the goroutine is
+		// gone, which is what lets a test assert the component went quiet.
+		if err := rl.Shutdown(t.Context()); err != nil {
+			t.Errorf("Shutdown() = %v, want nil (prune goroutine must have exited)", err)
+		}
+		// Witness the blocking half of the contract: after Shutdown returns,
+		// done must already be closed. A Shutdown that only signalled and
+		// returned nil without waiting would leave done open here.
+		select {
+		case <-rl.done:
+		default:
+			t.Error("prune loop still running after Shutdown returned")
+		}
 		synctest.Wait()
 	})
 }
@@ -889,8 +903,8 @@ func TestRateLimiter_capWarning_logs_once_per_episode(t *testing.T) {
 		PruneInterval: time.Hour,
 		MaxEntries:    2,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	// Four distinct keys with MaxEntries=2 force two evictions in one
@@ -920,8 +934,8 @@ func TestRateLimiter_capWarning_rearms_after_prune_below_cap(t *testing.T) {
 		PruneInterval: time.Hour,
 		MaxEntries:    2,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	// First saturation episode: the third key evicts and warns once.
@@ -954,8 +968,8 @@ func TestRateLimiter_nonpositive_IPLimit_expired_window_reallows(t *testing.T) {
 		PruneInterval: time.Hour,
 		MaxEntries:    100,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	// One recorded attempt blocks under a non-positive IPLimit (fail-closed).
@@ -986,8 +1000,8 @@ func TestRateLimiter_eviction_drops_emptied_window_first(t *testing.T) {
 		PruneInterval: time.Hour,
 		MaxEntries:    2,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	rl.Record("emptied", "")
@@ -1040,8 +1054,8 @@ func TestProperty_EvictionAdmitsNewKeyUnderCapPressure(t *testing.T) {
 			PruneInterval: time.Hour,
 			MaxEntries:    maxEntries,
 		}
-		rl := NewRateLimiter(t.Context(), cfg)
-		defer rl.Stop()
+		rl := New(t.Context(), cfg)
+		defer rl.Shutdown(context.Background())
 		rl.nowFunc = func() time.Time { return now }
 
 		// Each new key is filled to its limit under a deliberately small entry cap,
@@ -1051,7 +1065,7 @@ func TestProperty_EvictionAdmitsNewKeyUnderCapPressure(t *testing.T) {
 		// Dropping new keys when full (the pre-eviction behavior) lets an attacker
 		// pin the map so an untracked target fails open.
 		for i := range numKeys {
-			key := fmt.Sprintf("key-%d", i)
+			key := ClientIP(fmt.Sprintf("key-%d", i))
 			for range ipLimit {
 				rl.Record(key, "")
 			}
@@ -1081,8 +1095,8 @@ func TestRateLimiter_empty_ip_skips_ip_tracking(t *testing.T) {
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	rl := NewRateLimiter(t.Context(), DefaultConfig())
-	defer rl.Stop()
+	rl := New(t.Context(), DefaultConfig())
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	rl.Record("", "alice")
@@ -1128,8 +1142,8 @@ func TestRateLimiter_empty_ip_account_dimension_still_blocks(t *testing.T) {
 		PruneInterval: time.Hour,
 		MaxEntries:    100,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	// An empty ip skips the IP dimension on every call, so only the account
@@ -1172,8 +1186,8 @@ func TestRateLimiter_zeroIPWindowNormalizedSoLimitStillBlocks(t *testing.T) {
 		PruneInterval: time.Hour,
 		MaxEntries:    100,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	for range cfg.IPLimit {
@@ -1205,8 +1219,8 @@ func TestRateLimiter_zeroMaxEntriesNormalizedSoDistinctKeysCoexist(t *testing.T)
 		PruneInterval: time.Hour,
 		MaxEntries:    0,
 	}
-	rl := NewRateLimiter(t.Context(), cfg)
-	defer rl.Stop()
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
 	rl.nowFunc = func() time.Time { return now }
 
 	for range cfg.IPLimit {

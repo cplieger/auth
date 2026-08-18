@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/cplieger/auth/v3"
+	"github.com/cplieger/auth/v4"
 )
 
 var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
@@ -40,12 +40,12 @@ func FuzzFormatAAGUID(f *testing.F) {
 	})
 }
 
-// FuzzAPICredentialToWebAuthn exercises the credential-decoding path: it feeds
+// FuzzCredentialFromAPI exercises the credential-decoding path: it feeds
 // arbitrary bytes into RawAttestation (json-unmarshalled inside the function) and
 // asserts the decoder is total (never panics) and that attestation contents can
 // never leak into the authenticator flags or identity fields. Complements the
 // every-PR rapid round-trip property with a persistent coverage-guided corpus.
-func FuzzAPICredentialToWebAuthn(f *testing.F) {
+func FuzzCredentialFromAPI(f *testing.F) {
 	f.Add([]byte(nil), "", uint32(0), uint8(0))
 	f.Add([]byte("not valid json"), "usb", uint32(1), uint8(0xff))
 	f.Add([]byte("{}"), "usb,nfc", uint32(42), uint8(0x15))
@@ -67,7 +67,7 @@ func FuzzAPICredentialToWebAuthn(f *testing.F) {
 			CloneWarning:   flagBits&16 != 0,
 		}
 
-		got := APICredentialToWebAuthn(cred)
+		got := CredentialFromAPI(cred)
 
 		if got.Flags.BackupEligible != cred.BackupEligible {
 			t.Errorf("BackupEligible = %v, want %v", got.Flags.BackupEligible, cred.BackupEligible)

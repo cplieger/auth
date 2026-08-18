@@ -11,16 +11,16 @@ func TestCookieConfig_Defaults(t *testing.T) {
 	t.Parallel()
 	cfg := DefaultCookieConfig()
 	if cfg.Name != "auth_session" {
-		t.Fatalf("expected auth_session, got %s", cfg.Name)
+		t.Errorf("default Name = %q, want %q", cfg.Name, "auth_session")
 	}
 	if cfg.Posture != PostureSecure {
-		t.Fatalf("expected PostureSecure, got %d", cfg.Posture)
+		t.Errorf("default Posture = %d, want PostureSecure", cfg.Posture)
 	}
 	if cfg.Path != "/" {
-		t.Fatalf("expected /, got %s", cfg.Path)
+		t.Errorf("default Path = %q, want %q", cfg.Path, "/")
 	}
 	if cfg.SameSite != http.SameSiteLaxMode {
-		t.Fatalf("expected Lax, got %d", cfg.SameSite)
+		t.Errorf("default SameSite = %d, want Lax", cfg.SameSite)
 	}
 }
 
@@ -70,17 +70,17 @@ func TestCookieConfig_SetAndRead(t *testing.T) {
 		t.Fatalf("expected 1 cookie, got %d", len(cookies))
 	}
 	if cookies[0].Name != "test_sess" {
-		t.Fatalf("expected test_sess, got %s", cookies[0].Name)
+		t.Errorf("cookie name = %q, want %q", cookies[0].Name, "test_sess")
 	}
 	if cookies[0].Value != "tok123" {
-		t.Fatalf("expected tok123, got %s", cookies[0].Value)
+		t.Errorf("cookie value = %q, want %q", cookies[0].Value, "tok123")
 	}
 
 	// Read it back
 	r2 := httptest.NewRequest(http.MethodGet, "/", nil)
 	r2.AddCookie(cookies[0])
 	if got := cfg.ReadCookie(r2); got != "tok123" {
-		t.Fatalf("expected tok123, got %s", got)
+		t.Errorf("ReadCookie() = %q, want %q", got, "tok123")
 	}
 }
 
@@ -99,10 +99,10 @@ func TestCookieConfig_CustomSameSiteAndPath(t *testing.T) {
 	defer resp.Body.Close()
 	c := resp.Cookies()[0]
 	if c.Path != "/app" {
-		t.Fatalf("expected /app, got %s", c.Path)
+		t.Errorf("cookie Path = %q, want %q", c.Path, "/app")
 	}
 	if c.SameSite != http.SameSiteStrictMode {
-		t.Fatalf("expected Strict, got %d", c.SameSite)
+		t.Errorf("cookie SameSite = %d, want Strict", c.SameSite)
 	}
 }
 

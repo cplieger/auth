@@ -14,20 +14,24 @@ func TestHasher_DefaultParams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ok, err := h.Verify("test-password", hash)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok {
-		t.Fatal("expected verification to succeed")
-	}
-	ok, err = h.Verify("wrong-password", hash)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ok {
-		t.Fatal("expected verification to fail")
-	}
+	t.Run("verifies correct password", func(t *testing.T) {
+		ok, err := h.Verify("test-password", hash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			t.Errorf("Verify(correct password) = %v, want true", ok)
+		}
+	})
+	t.Run("rejects wrong password", func(t *testing.T) {
+		ok, err := h.Verify("wrong-password", hash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok {
+			t.Errorf("Verify(wrong password) = %v, want false", ok)
+		}
+	})
 }
 
 func TestHasher_CustomParams(t *testing.T) {
@@ -65,12 +69,16 @@ func TestHasher_NeedsRehash(t *testing.T) {
 	p2 := Argon2Params{Memory: 4096, Iterations: 2, Parallelism: 1, SaltLength: 16, KeyLength: 32}
 	h2, _ := NewHasher(p2)
 
-	if !h2.NeedsRehash(hash) {
-		t.Fatal("expected NeedsRehash=true for different params")
-	}
-	if h1.NeedsRehash(hash) {
-		t.Fatal("expected NeedsRehash=false for same params")
-	}
+	t.Run("different params need rehash", func(t *testing.T) {
+		if got := h2.NeedsRehash(hash); !got {
+			t.Errorf("NeedsRehash(hash made with %+v) under %+v = %v, want true", p1, p2, got)
+		}
+	})
+	t.Run("same params do not need rehash", func(t *testing.T) {
+		if got := h1.NeedsRehash(hash); got {
+			t.Errorf("NeedsRehash(hash made with %+v) under same params = %v, want false", p1, got)
+		}
+	})
 }
 
 func TestHasher_WithPepper(t *testing.T) {
@@ -84,23 +92,25 @@ func TestHasher_WithPepper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ok, err := h.Verify("peppered-password", hash)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok {
-		t.Fatal("expected peppered verification to succeed")
-	}
-
-	// Without pepper should fail
-	hNoPepper, _ := NewHasher(DefaultArgon2Params())
-	ok, err = hNoPepper.Verify("peppered-password", hash)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ok {
-		t.Fatal("expected verification without pepper to fail")
-	}
+	t.Run("verifies with same pepper", func(t *testing.T) {
+		ok, err := h.Verify("peppered-password", hash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			t.Errorf("Verify(with pepper) = %v, want true", ok)
+		}
+	})
+	t.Run("rejects without pepper", func(t *testing.T) {
+		hNoPepper, _ := NewHasher(DefaultArgon2Params())
+		ok, err := hNoPepper.Verify("peppered-password", hash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok {
+			t.Errorf("Verify(without pepper) = %v, want false", ok)
+		}
+	})
 }
 
 func TestHasher_InvalidParams(t *testing.T) {
@@ -167,19 +177,22 @@ func TestHasher_differentPeppersProduceIncompatibleHashes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ok, err := h1.Verify(password, hash1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok {
-		t.Fatal("hash did not verify under its own pepper")
-	}
-
-	ok, err = h2.Verify(password, hash1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ok {
-		t.Fatal("hash verified under a different pepper; the pepper is not affecting the derived key")
-	}
+	t.Run("verifies under its own pepper", func(t *testing.T) {
+		ok, err := h1.Verify(password, hash1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			t.Errorf("Verify(own pepper) = %v, want true", ok)
+		}
+	})
+	t.Run("rejects under a different pepper", func(t *testing.T) {
+		ok, err := h2.Verify(password, hash1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok {
+			t.Errorf("Verify(different pepper) = %v, want false (the pepper must affect the derived key)", ok)
+		}
+	})
 }

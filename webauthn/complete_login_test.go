@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cplieger/auth/v3"
-	"github.com/cplieger/auth/v3/internal/capture"
-	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/cplieger/auth/v4"
+	"github.com/cplieger/auth/v4/internal/capture"
+	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
 )
 
 // custodyRecord captures one UpdatePasskeyAfterLogin call.
@@ -170,15 +170,15 @@ func TestStoreUserFinder_lookup_failures_stay_generic(t *testing.T) {
 func TestPersistLoginCustody_records_all_flags(t *testing.T) {
 	t.Parallel()
 	fs := &fakeStore{}
-	cred := &webauthn.Credential{
+	cred := &gowebauthn.Credential{
 		ID: []byte{9, 9, 9},
-		Flags: webauthn.CredentialFlags{
+		Flags: gowebauthn.CredentialFlags{
 			UserPresent:    true,
 			UserVerified:   true,
 			BackupEligible: true,
 			BackupState:    false,
 		},
-		Authenticator: webauthn.Authenticator{SignCount: 42, CloneWarning: true},
+		Authenticator: gowebauthn.Authenticator{SignCount: 42, CloneWarning: true},
 	}
 
 	persistLoginCustody(t.Context(), fs, cred)
@@ -201,7 +201,7 @@ func TestPersistLoginCustody_failure_warns_only(t *testing.T) {
 	h := capture.Default(t)
 	fs := &fakeStore{updateErr: errors.New("bucket unavailable")}
 
-	persistLoginCustody(t.Context(), fs, &webauthn.Credential{ID: []byte{1}})
+	persistLoginCustody(t.Context(), fs, &gowebauthn.Credential{ID: []byte{1}})
 
 	if n := h.CountMsg("post-login credential update failed"); n != 1 {
 		t.Errorf("custody failure logged %d warnings, want 1", n)
@@ -213,12 +213,12 @@ func TestPersistLoginCustody_failure_warns_only(t *testing.T) {
 // wrapped with context, no user is returned, and no custody write happens.
 func TestCompleteLogin_ceremony_failure_returns_wrapped_error(t *testing.T) {
 	t.Parallel()
-	wa, err := NewWebAuthn("example.com", "Example", []string{"https://example.com"})
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	fs := &fakeStore{}
-	sess := &webauthn.SessionData{Challenge: "test-challenge"}
+	sess := &gowebauthn.SessionData{Challenge: "test-challenge"}
 	r := httptest.NewRequest(http.MethodPost, "/finish", strings.NewReader("not json"))
 
 	user, cred, cerr := CompleteLogin(t.Context(), wa, fs, sess, r)

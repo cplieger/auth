@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cplieger/auth/v3/internal/capture"
+	"github.com/cplieger/auth/v4/internal/capture"
 )
 
 // newVerifierRequest builds a request carrying the session cookie for the
@@ -109,15 +109,21 @@ func TestSessionVerifier_Verify_idleTimeoutOption_expiresOldSession(t *testing.T
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: "s", Value: plain})
 
-	expired := mustSessionVerifier(t, store, WithCookie(cfg), WithIdleTimeout(time.Hour))
-	if u, _, _ := expired.Verify(ctx, r); u != nil {
-		t.Fatal("Verify() with 1h idle timeout authenticated a 2h-idle session, want nil")
-	}
-
-	valid := mustSessionVerifier(t, store, WithCookie(cfg), WithIdleTimeout(3*time.Hour))
-	if u, _, _ := valid.Verify(ctx, r); u == nil {
-		t.Fatal("Verify() with 3h idle timeout refused a 2h-idle session, want a user")
-	}
+	// The subtests run in order and share the store; only the accepting
+	// verifier writes activity, and it runs second, so the rejection subtest
+	// always sees the original 2h-stale LastActivity.
+	t.Run("1h idle timeout rejects a 2h-idle session", func(t *testing.T) {
+		expired := mustSessionVerifier(t, store, WithCookie(cfg), WithIdleTimeout(time.Hour))
+		if u, _, _ := expired.Verify(ctx, r); u != nil {
+			t.Errorf("Verify() with 1h idle timeout = %+v, want nil (session idle for 2h)", u)
+		}
+	})
+	t.Run("3h idle timeout accepts a 2h-idle session", func(t *testing.T) {
+		valid := mustSessionVerifier(t, store, WithCookie(cfg), WithIdleTimeout(3*time.Hour))
+		if u, _, _ := valid.Verify(ctx, r); u == nil {
+			t.Error("Verify() with 3h idle timeout = nil, want a user")
+		}
+	})
 }
 
 // --- shouldWriteActivity: per-hash activity-write throttling decision ---

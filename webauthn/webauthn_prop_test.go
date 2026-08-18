@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/cplieger/auth/v3"
+	"github.com/cplieger/auth/v4"
 	"pgregory.net/rapid"
 )
 
 // TestAPICredentialRoundTrip_preserves_fields asserts that converting a
-// PasskeyCredential to a webauthn.Credential and back preserves every scalar
+// PasskeyCredential to a gowebauthn.Credential and back preserves every scalar
 // field and all five authenticator flags. BackupEligible, BackupState, and
 // UserVerified drive credential-trust decisions, so a conversion that silently
 // dropped or swapped a flag would weaken authentication while the existing
@@ -31,7 +31,7 @@ func TestAPICredentialRoundTrip_preserves_fields(t *testing.T) {
 			CloneWarning:    rapid.Bool().Draw(t, "cloneWarning"),
 		}
 
-		wa := APICredentialToWebAuthn(orig)
+		wa := CredentialFromAPI(orig)
 		got := CredentialToAPI(&wa, orig.UserID, orig.Name)
 
 		if !bytes.Equal(got.CredentialID, orig.CredentialID) {

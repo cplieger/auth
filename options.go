@@ -21,7 +21,7 @@ type authConfig struct {
 	logger           *slog.Logger
 	bypass           func() bool
 	unauthorized     func(http.ResponseWriter, *http.Request)
-	timeoutSource    func() (idle, abs time.Duration)
+	timeoutSource    func() SessionTimeouts
 	loginPath        string
 	verifiers        []CredentialVerifier
 	cookie           CookieConfig
@@ -30,27 +30,27 @@ type authConfig struct {
 	activityThrottle time.Duration
 }
 
-// resolveTimeouts returns the effective idle/absolute session timeouts for one
+// resolveTimeouts returns the effective session timeouts for one
 // verification. Without a timeout source (the default) they are the static
 // configured values, resolved once at construction. With a source (see
 // [WithTimeoutSource]) the source is consulted per call, and each non-positive
-// value it returns falls back to the corresponding static configured value, so
+// field it returns falls back to the corresponding static configured value, so
 // a misbehaving source can never produce the always-expired sessions a
 // non-positive timeout would cause (the same hazard the constructors reject
 // for static values).
-func (c *authConfig) resolveTimeouts() (idle, abs time.Duration) {
-	idle, abs = c.idleTimeout, c.absTimeout
+func (c *authConfig) resolveTimeouts() SessionTimeouts {
+	ts := SessionTimeouts{Idle: c.idleTimeout, Absolute: c.absTimeout}
 	if c.timeoutSource == nil {
-		return idle, abs
+		return ts
 	}
-	di, da := c.timeoutSource()
-	if di > 0 {
-		idle = di
+	src := c.timeoutSource()
+	if src.Idle > 0 {
+		ts.Idle = src.Idle
 	}
-	if da > 0 {
-		abs = da
+	if src.Absolute > 0 {
+		ts.Absolute = src.Absolute
 	}
-	return idle, abs
+	return ts
 }
 
 // defaults applies default values to unset fields.
@@ -122,21 +122,24 @@ func WithUnauthorizedResponse(fn func(w http.ResponseWriter, r *http.Request)) O
 	return func(c *authConfig) { c.unauthorized = fn }
 }
 
-// WithTimeoutSource sets a callback that resolves the session idle and
-// absolute timeouts per verification, instead of the static values configured
-// via [WithIdleTimeout]/[WithAbsTimeout]. It exists for consumers whose
-// timeouts are hot-reloadable configuration: the default [SessionVerifier]
-// consults the source on every Verify, so a changed value takes effect without
-// reconstructing the verifier.
+// WithTimeoutSource sets a callback that resolves the session timeouts per
+// verification, instead of the static values configured via
+// [WithIdleTimeout]/[WithAbsTimeout]. It exists for consumers whose timeouts
+// are hot-reloadable configuration: the default [SessionVerifier] consults the
+// source on every Verify, so a changed value takes effect without
+// reconstructing the verifier. The source returns a [SessionTimeouts] so the
+// two durations travel field-named end to end; a callback returning a raw
+// (idle, abs) pair would reintroduce the silent-swap hazard the struct exists
+// to prevent.
 //
 // Validation is per-resolution (a construction-time check cannot bind dynamic
-// values): a non-positive idle or absolute value returned by the source falls
+// values): a non-positive Idle or Absolute field returned by the source falls
 // back to the corresponding static configured value, and the activity throttle
 // (see [WithActivityThrottle]) is clamped to at most half the resolved idle
 // timeout, so a source that shrinks the idle timeout below the configured
 // throttle can never make the persisted LastActivity stale enough to expire a
 // session that is actively in use.
-func WithTimeoutSource(fn func() (idle, abs time.Duration)) Option {
+func WithTimeoutSource(fn func() SessionTimeouts) Option {
 	return func(c *authConfig) { c.timeoutSource = fn }
 }
 

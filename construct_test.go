@@ -22,9 +22,9 @@ func mustSessionVerifier(tb testing.TB, store SessionVerifierStore, opts ...Opti
 // configuration is rejected. See [mustSessionVerifier].
 func mustAuthenticator(tb testing.TB, store AuthStore, opts ...Option) *Authenticator {
 	tb.Helper()
-	a, err := NewAuthenticator(store, opts...)
+	a, err := New(store, opts...)
 	if err != nil {
-		tb.Fatalf("NewAuthenticator: %v", err)
+		tb.Fatalf("New: %v", err)
 	}
 	return a
 }
@@ -63,26 +63,26 @@ func TestNewSessionVerifier_rejects_negative_abs_timeout(t *testing.T) {
 	}
 }
 
-func TestNewAuthenticator_rejects_invalid_cookie_config(t *testing.T) {
+func TestNew_rejects_invalid_cookie_config(t *testing.T) {
 	t.Parallel()
 	// A __Host- posture with a Domain is rejected by browsers; fail fast.
-	if _, err := NewAuthenticator(newFakeSessionStore(), WithCookie(CookieConfig{Domain: "example.com"})); err == nil {
-		t.Fatal("NewAuthenticator(__Host- posture + Domain) error = nil, want non-nil")
+	if _, err := New(newFakeSessionStore(), WithCookie(CookieConfig{Domain: "example.com"})); err == nil {
+		t.Fatal("New(__Host- posture + Domain) error = nil, want non-nil")
 	}
 }
 
-func TestNewAuthenticator_accepts_default_config(t *testing.T) {
+func TestNew_accepts_default_config(t *testing.T) {
 	t.Parallel()
-	if _, err := NewAuthenticator(newFakeSessionStore()); err != nil {
-		t.Fatalf("NewAuthenticator(defaults) error = %v, want nil", err)
+	if _, err := New(newFakeSessionStore()); err != nil {
+		t.Fatalf("New(defaults) error = %v, want nil", err)
 	}
 }
 
-func TestNewAuthenticator_rejects_negative_idle_timeout(t *testing.T) {
+func TestNew_rejects_negative_idle_timeout(t *testing.T) {
 	t.Parallel()
 	// Confirms the positivity check is enforced through the Authenticator
 	// constructor too, not just NewSessionVerifier.
-	if _, err := NewAuthenticator(newFakeSessionStore(), WithIdleTimeout(-time.Second)); err == nil {
-		t.Fatal("NewAuthenticator(negative idle timeout) error = nil, want non-nil")
+	if _, err := New(newFakeSessionStore(), WithIdleTimeout(-time.Second)); err == nil {
+		t.Fatal("New(negative idle timeout) error = nil, want non-nil")
 	}
 }

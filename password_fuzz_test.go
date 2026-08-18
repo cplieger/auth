@@ -5,7 +5,10 @@ import (
 	"testing"
 )
 
-func FuzzValidatePasswordLength(f *testing.F) {
+// FuzzPasswordLengthValidation drives both length-validation arms
+// (multi-factor and solo) and pins that a nil error implies the rune length
+// sits inside the arm's [min, max] window.
+func FuzzPasswordLengthValidation(f *testing.F) {
 	f.Add("short", true)
 	f.Add("a]valid-password!!", false)
 	f.Add(strings.Repeat("あ", 129), true)
@@ -13,15 +16,15 @@ func FuzzValidatePasswordLength(f *testing.F) {
 	f.Add("", true)
 
 	f.Fuzz(func(t *testing.T, pw string, passwordOnly bool) {
-		err := ValidatePasswordLength(pw, passwordOnly)
+		validate, minLen := ValidateMultiFactorPasswordLength, PasswordMinLengthMultiFactor
+		if passwordOnly {
+			validate, minLen = ValidateSoloPasswordLength, PasswordMinLengthSolo
+		}
+		err := validate(pw)
 		if err != nil {
 			return
 		}
 		runeLen := len([]rune(pw))
-		minLen := PasswordMinLengthMultiFactor
-		if passwordOnly {
-			minLen = PasswordMinLengthSolo
-		}
 		if runeLen < minLen || runeLen > PasswordMaxLength {
 			t.Errorf("nil error but rune length %d outside [%d, %d]", runeLen, minLen, PasswordMaxLength)
 		}
@@ -39,7 +42,7 @@ func FuzzValidatePasswordContext(f *testing.F) {
 		if forbiddenWord != "" {
 			forbidden = []string{forbiddenWord}
 		}
-		err := ValidatePasswordContext(pw, username, forbidden)
+		err := ValidatePasswordContext(pw, PasswordContext{Username: username, ForbiddenWords: forbidden})
 		if err != nil {
 			return
 		}

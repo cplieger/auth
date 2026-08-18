@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cplieger/auth/v3"
-	"github.com/cplieger/auth/v3/internal/capture"
+	"github.com/cplieger/auth/v4"
+	"github.com/cplieger/auth/v4/internal/capture"
 	"github.com/go-webauthn/webauthn/protocol"
 	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
 )
@@ -72,7 +72,7 @@ func TestWebAuthnUser_WebAuthnID_encodes_varint(t *testing.T) {
 	}
 }
 
-func TestAPICredentialToWebAuthn_table(t *testing.T) {
+func TestCredentialFromAPI_table(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name           string
@@ -92,7 +92,7 @@ func TestAPICredentialToWebAuthn_table(t *testing.T) {
 				Transport: tt.transport, SignCount: 42,
 				BackupEligible: true, UserPresent: true, UserVerified: true,
 			}
-			got := APICredentialToWebAuthn(cred)
+			got := CredentialFromAPI(cred)
 			if len(got.Transport) != tt.wantTransports {
 				t.Errorf("transport count = %d, want %d", len(got.Transport), tt.wantTransports)
 			}
@@ -158,7 +158,7 @@ func TestFormatAAGUID_edge_cases(t *testing.T) {
 	}
 }
 
-func TestAPICredentialToWebAuthn_corrupted_attestation(t *testing.T) {
+func TestCredentialFromAPI_corrupted_attestation(t *testing.T) {
 	t.Parallel()
 	cred := &auth.PasskeyCredential{
 		CredentialID:   []byte{1},
@@ -166,7 +166,7 @@ func TestAPICredentialToWebAuthn_corrupted_attestation(t *testing.T) {
 		AAGUID:         make([]byte, 16),
 		RawAttestation: []byte("not valid json"),
 	}
-	got := APICredentialToWebAuthn(cred)
+	got := CredentialFromAPI(cred)
 	if !bytes.Equal(got.ID, []byte{1}) {
 		t.Errorf("CredentialID mismatch after corrupted attestation")
 	}
@@ -181,9 +181,9 @@ func TestCloneWarning_roundtrip(t *testing.T) {
 		SignCount:    10,
 		CloneWarning: true,
 	}
-	waCred := APICredentialToWebAuthn(cred)
+	waCred := CredentialFromAPI(cred)
 	if !waCred.Authenticator.CloneWarning {
-		t.Error("APICredentialToWebAuthn did not propagate CloneWarning")
+		t.Error("CredentialFromAPI did not propagate CloneWarning")
 	}
 	back := CredentialToAPI(&waCred, 1, "test")
 	if !back.CloneWarning {
@@ -191,20 +191,40 @@ func TestCloneWarning_roundtrip(t *testing.T) {
 	}
 }
 
-func TestNewWebAuthn_valid_config(t *testing.T) {
-	wa, err := NewWebAuthn("example.com", "Example", []string{"https://example.com"})
+func TestNew_valid_config(t *testing.T) {
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
 	if err != nil {
-		t.Fatalf("NewWebAuthn error: %v", err)
+		t.Fatalf("New error: %v", err)
 	}
 	if wa == nil {
-		t.Fatal("NewWebAuthn returned nil")
+		t.Fatal("New returned nil")
+	}
+}
+
+// New rejects an RPConfig with an empty ID at construction. Upstream
+// go-webauthn validates only RPOrigins, so an empty RP ID would construct
+// successfully and then fail every ceremony with an RP-hash mismatch
+// (sha256("") can never equal a real RP hash); the wrapper exists to make the
+// relying party legible, so the misconfiguration must surface here, naming
+// the field.
+func TestNew_empty_rp_id_rejected(t *testing.T) {
+	t.Parallel()
+	wa, err := New(RPConfig{DisplayName: "Example", Origins: []string{"https://example.com"}})
+	if err == nil {
+		t.Fatal("New(RPConfig{ID: \"\"}) error = nil, want error naming RPConfig.ID")
+	}
+	if !strings.Contains(err.Error(), "RPConfig.ID") {
+		t.Errorf("New(RPConfig{ID: \"\"}) error = %q, want it to name RPConfig.ID", err)
+	}
+	if wa != nil {
+		t.Errorf("New(RPConfig{ID: \"\"}) = %v, want nil", wa)
 	}
 }
 
 func TestBeginRegistration_with_user(t *testing.T) {
-	wa, err := NewWebAuthn("example.com", "Example", []string{"https://example.com"})
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
 	if err != nil {
-		t.Fatalf("NewWebAuthn: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
 	creation, session, err := BeginRegistration(wa, user)
@@ -212,17 +232,17 @@ func TestBeginRegistration_with_user(t *testing.T) {
 		t.Fatalf("BeginRegistration error: %v", err)
 	}
 	if creation == nil {
-		t.Fatal("creation nil")
+		t.Error("BeginRegistration() creation = nil, want non-nil")
 	}
 	if session == nil {
-		t.Fatal("session nil")
+		t.Error("BeginRegistration() session = nil, want non-nil")
 	}
 }
 
 func TestBeginRegistration_requires_user_verification(t *testing.T) {
-	wa, err := NewWebAuthn("example.com", "Example", []string{"https://example.com"})
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
 	if err != nil {
-		t.Fatalf("NewWebAuthn: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
 	creation, _, err := BeginRegistration(wa, user)
@@ -241,9 +261,9 @@ func TestBeginRegistration_requires_user_verification(t *testing.T) {
 // edit that dropped or weakened ResidentKey would silently break discoverable
 // login while existing tests stayed green.
 func TestBeginRegistration_requires_resident_key(t *testing.T) {
-	wa, err := NewWebAuthn("example.com", "Example", []string{"https://example.com"})
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
 	if err != nil {
-		t.Fatalf("NewWebAuthn: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
 	creation, _, err := BeginRegistration(wa, user)
@@ -257,9 +277,9 @@ func TestBeginRegistration_requires_resident_key(t *testing.T) {
 }
 
 func TestBeginLogin_requires_user_verification(t *testing.T) {
-	wa, err := NewWebAuthn("example.com", "Example", []string{"https://example.com"})
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
 	if err != nil {
-		t.Fatalf("NewWebAuthn: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	assertion, _, err := BeginLogin(wa)
 	if err != nil {
@@ -315,9 +335,9 @@ func TestCredentialToAPI_RawAttestation_presence(t *testing.T) {
 	}
 }
 
-// APICredentialToWebAuthn restores a non-empty RawAttestation back into the
+// CredentialFromAPI restores a non-empty RawAttestation back into the
 // credential's Attestation object byte-for-byte (the inverse of CredentialToAPI).
-func TestAPICredentialToWebAuthn_restores_attestation_from_raw(t *testing.T) {
+func TestCredentialFromAPI_restores_attestation_from_raw(t *testing.T) {
 	t.Parallel()
 
 	src := &gowebauthn.Credential{ID: []byte{9}, PublicKey: []byte{8}}
@@ -327,17 +347,17 @@ func TestAPICredentialToWebAuthn_restores_attestation_from_raw(t *testing.T) {
 		t.Fatal("setup: expected non-empty RawAttestation from CredentialToAPI")
 	}
 
-	got := APICredentialToWebAuthn(apiCred)
+	got := CredentialFromAPI(apiCred)
 
 	if !bytes.Equal(got.Attestation.Object, []byte{0xa0, 0x01, 0x02}) {
-		t.Errorf("APICredentialToWebAuthn restored Attestation.Object = %v, want %v",
+		t.Errorf("CredentialFromAPI restored Attestation.Object = %v, want %v",
 			got.Attestation.Object, []byte{0xa0, 0x01, 0x02})
 	}
 }
 
-// An empty RawAttestation is skipped silently: APICredentialToWebAuthn logs no
+// An empty RawAttestation is skipped silently: CredentialFromAPI logs no
 // corrupted-attestation warning when there is nothing to unmarshal.
-func TestAPICredentialToWebAuthn_empty_raw_attestation_no_warning(t *testing.T) {
+func TestCredentialFromAPI_empty_raw_attestation_no_warning(t *testing.T) {
 	h := capture.Default(t)
 
 	cred := &auth.PasskeyCredential{
@@ -346,16 +366,16 @@ func TestAPICredentialToWebAuthn_empty_raw_attestation_no_warning(t *testing.T) 
 		AAGUID:       make([]byte, 16),
 	}
 
-	_ = APICredentialToWebAuthn(cred)
+	_ = CredentialFromAPI(cred)
 
 	if n := h.CountMsg("corrupted attestation"); n != 0 {
-		t.Errorf("APICredentialToWebAuthn(empty RawAttestation) logged %d corrupted-attestation warnings, want 0", n)
+		t.Errorf("CredentialFromAPI(empty RawAttestation) logged %d corrupted-attestation warnings, want 0", n)
 	}
 }
 
 // A non-empty but malformed RawAttestation is reported once as a
 // corrupted-attestation warning and otherwise ignored.
-func TestAPICredentialToWebAuthn_invalid_raw_attestation_warns(t *testing.T) {
+func TestCredentialFromAPI_invalid_raw_attestation_warns(t *testing.T) {
 	h := capture.Default(t)
 
 	cred := &auth.PasskeyCredential{
@@ -365,41 +385,41 @@ func TestAPICredentialToWebAuthn_invalid_raw_attestation_warns(t *testing.T) {
 		RawAttestation: []byte("not valid json"),
 	}
 
-	_ = APICredentialToWebAuthn(cred)
+	_ = CredentialFromAPI(cred)
 
 	if n := h.CountMsg("corrupted attestation"); n != 1 {
-		t.Errorf("APICredentialToWebAuthn(invalid RawAttestation) logged %d corrupted-attestation warnings, want 1", n)
+		t.Errorf("CredentialFromAPI(invalid RawAttestation) logged %d corrupted-attestation warnings, want 1", n)
 	}
 }
 
-func TestNewWebAuthnUser(t *testing.T) {
+func TestNewUser(t *testing.T) {
 	t.Parallel()
 	t.Run("nil user returns error", func(t *testing.T) {
 		t.Parallel()
-		u, err := NewWebAuthnUser(nil, nil)
+		u, err := NewUser(nil, nil)
 		if err == nil {
-			t.Fatal("NewWebAuthnUser(nil, ...) error = nil, want non-nil")
+			t.Fatal("NewUser(nil, ...) error = nil, want non-nil")
 		}
 		if u != nil {
-			t.Errorf("NewWebAuthnUser(nil, ...) user = %v, want nil", u)
+			t.Errorf("NewUser(nil, ...) user = %v, want nil", u)
 		}
 	})
 	t.Run("valid user returns populated adapter", func(t *testing.T) {
 		t.Parallel()
 		au := &auth.User{ID: 7, Username: "bob"}
 		creds := []auth.PasskeyCredential{{CredentialID: []byte{1, 2}}}
-		u, err := NewWebAuthnUser(au, creds)
+		u, err := NewUser(au, creds)
 		if err != nil {
-			t.Fatalf("NewWebAuthnUser error = %v, want nil", err)
+			t.Fatalf("NewUser error = %v, want nil", err)
 		}
 		if u == nil {
-			t.Fatal("NewWebAuthnUser user = nil, want non-nil")
+			t.Fatal("NewUser user = nil, want non-nil")
 		}
 		if u.AuthUser != au {
-			t.Error("NewWebAuthnUser did not store the provided AuthUser")
+			t.Error("NewUser did not store the provided AuthUser")
 		}
 		if len(u.Credentials) != 1 {
-			t.Errorf("NewWebAuthnUser Credentials len = %d, want 1", len(u.Credentials))
+			t.Errorf("NewUser Credentials len = %d, want 1", len(u.Credentials))
 		}
 	})
 }
@@ -439,9 +459,9 @@ func TestPasskeyFriendlyName_unknown_numbered(t *testing.T) {
 // conditional mediation (the browser autofill UI that distinguishes it from
 // BeginLogin) and required user verification.
 func TestBeginConditionalLogin_enforces_conditional_mediation_and_uv(t *testing.T) {
-	wa, err := NewWebAuthn("example.com", "Example", []string{"https://example.com"})
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
 	if err != nil {
-		t.Fatalf("NewWebAuthn: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	assertion, session, err := BeginConditionalLogin(wa)
 	if err != nil {
@@ -532,17 +552,17 @@ func TestPasskeyFriendlyName_single_numbered_entry(t *testing.T) {
 }
 
 // TestBeginRegistration_enforces_ceremony_deadline pins the Enforce:true timeout
-// posture of NewWebAuthn. go-webauthn stamps a server-side deadline on the
+// posture of New. go-webauthn stamps a server-side deadline on the
 // returned SessionData only when Registration.Enforce is set, so a non-zero
 // Expires is the observable proof that an over-long registration ceremony is
 // rejected at FinishRegistration. go-webauthn leaves Enforce at its false
-// default, so dropping the Timeouts block from NewWebAuthn would zero Expires
+// default, so dropping the Timeouts block from New would zero Expires
 // and fail this test. The advisory timeout echoed to the browser equals
 // CeremonyTimeout.
 func TestBeginRegistration_enforces_ceremony_deadline(t *testing.T) {
-	wa, err := NewWebAuthn("example.com", "Example", []string{"https://example.com"})
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
 	if err != nil {
-		t.Fatalf("NewWebAuthn: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
 	creation, session, err := BeginRegistration(wa, user)
@@ -553,7 +573,7 @@ func TestBeginRegistration_enforces_ceremony_deadline(t *testing.T) {
 		t.Fatal("BeginRegistration returned nil session")
 	}
 	if session.Expires.IsZero() {
-		t.Fatal("session.Expires is zero, want a server-side ceremony deadline (Registration.Enforce must be true)")
+		t.Error("session.Expires is zero, want a server-side ceremony deadline (Registration.Enforce must be true)")
 	}
 	if got, want := creation.Response.Timeout, int(CeremonyTimeout.Milliseconds()); got != want {
 		t.Errorf("creation.Response.Timeout = %d ms, want %d ms", got, want)
@@ -567,9 +587,9 @@ func TestBeginRegistration_enforces_ceremony_deadline(t *testing.T) {
 // credential-less user, so dropping WithExclusions would leave this list empty
 // and go unnoticed.
 func TestBeginRegistration_excludes_existing_credentials(t *testing.T) {
-	wa, err := NewWebAuthn("example.com", "Example", []string{"https://example.com"})
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
 	if err != nil {
-		t.Fatalf("NewWebAuthn: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	user := &User{
 		AuthUser: &auth.User{ID: 1, Username: "test"},
@@ -595,15 +615,15 @@ func TestBeginRegistration_excludes_existing_credentials(t *testing.T) {
 }
 
 // TestBeginLogin_enforces_ceremony_deadline pins the Enforce:true posture for the
-// login ceremony. NewWebAuthn sets Login.Enforce, so BeginLogin's SessionData
+// login ceremony. New sets Login.Enforce, so BeginLogin's SessionData
 // carries a non-zero server-side Expires deadline (go-webauthn rejects an expired
 // assertion at FinishLogin). go-webauthn leaves Enforce false by default, so
-// removing the Timeouts block from NewWebAuthn would zero Expires and fail this
+// removing the Timeouts block from New would zero Expires and fail this
 // test. The advisory timeout echoed to the client equals CeremonyTimeout.
 func TestBeginLogin_enforces_ceremony_deadline(t *testing.T) {
-	wa, err := NewWebAuthn("example.com", "Example", []string{"https://example.com"})
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
 	if err != nil {
-		t.Fatalf("NewWebAuthn: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	assertion, session, err := BeginLogin(wa)
 	if err != nil {
@@ -613,7 +633,7 @@ func TestBeginLogin_enforces_ceremony_deadline(t *testing.T) {
 		t.Fatal("BeginLogin returned nil session")
 	}
 	if session.Expires.IsZero() {
-		t.Fatal("session.Expires is zero, want a server-side ceremony deadline (Login.Enforce must be true)")
+		t.Error("session.Expires is zero, want a server-side ceremony deadline (Login.Enforce must be true)")
 	}
 	if got, want := assertion.Response.Timeout, int(CeremonyTimeout.Milliseconds()); got != want {
 		t.Errorf("assertion.Response.Timeout = %d ms, want %d ms", got, want)

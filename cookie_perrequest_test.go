@@ -25,13 +25,13 @@ func TestCookieConfig_PerRequest_HTTPS_EmitsHostSecure(t *testing.T) {
 	defer resp.Body.Close()
 	c := resp.Cookies()[0]
 	if c.Name != "__Host-sfx_session" {
-		t.Fatalf("HTTPS: expected __Host-sfx_session, got %s", c.Name)
+		t.Errorf("HTTPS cookie name = %q, want %q", c.Name, "__Host-sfx_session")
 	}
 	if !c.Secure {
-		t.Fatal("HTTPS: expected Secure=true")
+		t.Errorf("HTTPS cookie Secure = %v, want true", c.Secure)
 	}
 	if got := cfg.CookieName(r); got != "__Host-sfx_session" {
-		t.Fatalf("HTTPS: CookieName = %s, want __Host-sfx_session", got)
+		t.Errorf("HTTPS CookieName() = %q, want %q", got, "__Host-sfx_session")
 	}
 }
 
@@ -46,64 +46,70 @@ func TestCookieConfig_PerRequest_HTTP_EmitsBareNoSecure(t *testing.T) {
 	defer resp.Body.Close()
 	c := resp.Cookies()[0]
 	if c.Name != "sfx_session" {
-		t.Fatalf("HTTP: expected bare sfx_session, got %s", c.Name)
+		t.Errorf("HTTP cookie name = %q, want bare %q", c.Name, "sfx_session")
 	}
 	if c.Secure {
-		t.Fatal("HTTP: expected Secure=false")
+		t.Errorf("HTTP cookie Secure = %v, want false", c.Secure)
 	}
 	if got := cfg.CookieName(r); got != "sfx_session" {
-		t.Fatalf("HTTP: CookieName = %s, want sfx_session", got)
+		t.Errorf("HTTP CookieName() = %q, want %q", got, "sfx_session")
 	}
 }
 
 func TestCookieConfig_PerRequest_ForwardedProto_RespectsTrust(t *testing.T) {
 	t.Parallel()
-	// With TrustForwardedHeaders, X-Forwarded-Proto: https drives the HTTPS path.
-	trusted := CookieConfig{Posture: PosturePerRequest, Name: "sfx_session", TrustForwardedHeaders: true}
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("X-Forwarded-Proto", "https")
-	if got := trusted.CookieName(r); got != "__Host-sfx_session" {
-		t.Fatalf("trusted forwarded-proto: CookieName = %s, want __Host-sfx_session", got)
-	}
-
-	// Without trust, the forwarded header is ignored -> bare name, no Secure.
-	untrusted := CookieConfig{Posture: PosturePerRequest, Name: "sfx_session"}
-	if got := untrusted.CookieName(r); got != "sfx_session" {
-		t.Fatalf("untrusted forwarded-proto: CookieName = %s, want sfx_session", got)
-	}
+	t.Run("trusted header drives the HTTPS name", func(t *testing.T) {
+		t.Parallel()
+		trusted := CookieConfig{Posture: PosturePerRequest, Name: "sfx_session", TrustForwardedHeaders: true}
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("X-Forwarded-Proto", "https")
+		if got := trusted.CookieName(r); got != "__Host-sfx_session" {
+			t.Errorf("trusted forwarded-proto CookieName() = %q, want %q", got, "__Host-sfx_session")
+		}
+	})
+	t.Run("untrusted header is ignored", func(t *testing.T) {
+		t.Parallel()
+		untrusted := CookieConfig{Posture: PosturePerRequest, Name: "sfx_session"}
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("X-Forwarded-Proto", "https")
+		if got := untrusted.CookieName(r); got != "sfx_session" {
+			t.Errorf("untrusted forwarded-proto CookieName() = %q, want bare %q", got, "sfx_session")
+		}
+	})
 }
 
 func TestCookieConfig_PerRequest_ReadCookie_RoundTrip(t *testing.T) {
 	t.Parallel()
 	cfg := CookieConfig{Posture: PosturePerRequest, Name: "sfx_session"}
 
-	// HTTPS writes __Host-sfx_session; reading on an HTTPS request finds it.
-	wHTTPS := httptest.NewRecorder()
-	rHTTPS := httpsRequest()
-	cfg.SetCookie(wHTTPS, rHTTPS, "secure-tok", 3600)
-	respHTTPS := wHTTPS.Result()
-	defer respHTTPS.Body.Close()
-	readReqHTTPS := httpsRequest()
-	for _, ck := range respHTTPS.Cookies() {
-		readReqHTTPS.AddCookie(ck)
-	}
-	if got := cfg.ReadCookie(readReqHTTPS); got != "secure-tok" {
-		t.Fatalf("HTTPS round-trip: ReadCookie = %q, want secure-tok", got)
-	}
-
-	// HTTP writes bare sfx_session; reading on an HTTP request finds it.
-	wHTTP := httptest.NewRecorder()
-	rHTTP := httptest.NewRequest(http.MethodGet, "/", nil)
-	cfg.SetCookie(wHTTP, rHTTP, "lan-tok", 3600)
-	respHTTP := wHTTP.Result()
-	defer respHTTP.Body.Close()
-	readReqHTTP := httptest.NewRequest(http.MethodGet, "/", nil)
-	for _, ck := range respHTTP.Cookies() {
-		readReqHTTP.AddCookie(ck)
-	}
-	if got := cfg.ReadCookie(readReqHTTP); got != "lan-tok" {
-		t.Fatalf("HTTP round-trip: ReadCookie = %q, want lan-tok", got)
-	}
+	t.Run("https writes and reads the __Host- name", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		cfg.SetCookie(w, httpsRequest(), "secure-tok", 3600)
+		resp := w.Result()
+		defer resp.Body.Close()
+		readReq := httpsRequest()
+		for _, ck := range resp.Cookies() {
+			readReq.AddCookie(ck)
+		}
+		if got := cfg.ReadCookie(readReq); got != "secure-tok" {
+			t.Errorf("HTTPS round-trip ReadCookie() = %q, want %q", got, "secure-tok")
+		}
+	})
+	t.Run("http writes and reads the bare name", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		cfg.SetCookie(w, httptest.NewRequest(http.MethodGet, "/", nil), "lan-tok", 3600)
+		resp := w.Result()
+		defer resp.Body.Close()
+		readReq := httptest.NewRequest(http.MethodGet, "/", nil)
+		for _, ck := range resp.Cookies() {
+			readReq.AddCookie(ck)
+		}
+		if got := cfg.ReadCookie(readReq); got != "lan-tok" {
+			t.Errorf("HTTP round-trip ReadCookie() = %q, want %q", got, "lan-tok")
+		}
+	})
 }
 
 // TestCookieConfig_PerRequest_DefaultPostureUnchanged confirms that adding
@@ -115,11 +121,11 @@ func TestCookieConfig_PerRequest_DefaultPostureUnchanged(t *testing.T) {
 	httpReq := httptest.NewRequest(http.MethodGet, "/", nil)
 	httpsReq := httpsRequest()
 
-	if cfg.CookieName(httpReq) != "__Host-auth_session" {
-		t.Fatalf("default over HTTP: name = %s", cfg.CookieName(httpReq))
+	if got := cfg.CookieName(httpReq); got != "__Host-auth_session" {
+		t.Errorf("default posture CookieName(HTTP) = %q, want %q", got, "__Host-auth_session")
 	}
-	if cfg.CookieName(httpsReq) != "__Host-auth_session" {
-		t.Fatalf("default over HTTPS: name = %s", cfg.CookieName(httpsReq))
+	if got := cfg.CookieName(httpsReq); got != "__Host-auth_session" {
+		t.Errorf("default posture CookieName(HTTPS) = %q, want %q", got, "__Host-auth_session")
 	}
 
 	for _, r := range []*http.Request{httpReq, httpsReq} {
@@ -129,7 +135,7 @@ func TestCookieConfig_PerRequest_DefaultPostureUnchanged(t *testing.T) {
 		c := resp.Cookies()[0]
 		resp.Body.Close()
 		if c.Name != "__Host-auth_session" || !c.Secure {
-			t.Fatalf("default posture changed: name=%s secure=%v", c.Name, c.Secure)
+			t.Errorf("default posture SetCookie emitted name=%q secure=%v, want __Host-auth_session with Secure", c.Name, c.Secure)
 		}
 	}
 }

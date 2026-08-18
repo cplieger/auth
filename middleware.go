@@ -23,7 +23,7 @@ type AuthStore interface { //nolint:revive // stutters as auth.AuthStore; renami
 }
 
 // Authenticator resolves an HTTP request to an authenticated user.
-// Create with [NewAuthenticator].
+// Create with [New].
 type Authenticator struct {
 	store            AuthStore
 	defaultVerifiers []CredentialVerifier
@@ -35,12 +35,12 @@ type Authenticator struct {
 	bypassWarned sync.Once
 }
 
-// NewAuthenticator creates an Authenticator with the given store and options.
+// New creates an Authenticator with the given store and options.
 // The store must implement SessionReader, UserReader, and APIKeyReader. It
 // returns an error when the assembled configuration is unusable (see
 // [CookieConfig.Validate] and [WithActivityThrottle]). If no idle/absolute
 // timeout is provided, defaults of 1h and 24h are applied.
-func NewAuthenticator(store AuthStore, opts ...Option) (*Authenticator, error) {
+func New(store AuthStore, opts ...Option) (*Authenticator, error) {
 	cfg := authConfig{}
 	for _, o := range opts {
 		if o != nil {
@@ -158,7 +158,7 @@ func (a *Authenticator) logger() *slog.Logger {
 
 // verifiers returns the ordered list of credential verifiers. When an explicit
 // chain was injected via [WithVerifiers], it is used; otherwise the default
-// session + API-key chain (built once in [NewAuthenticator]) is returned.
+// session + API-key chain (built once in [New]) is returned.
 func (a *Authenticator) verifiers() []CredentialVerifier {
 	if len(a.cfg.verifiers) > 0 {
 		return a.cfg.verifiers
@@ -197,17 +197,36 @@ func ValidateRedirectURI(uri string) string {
 	return uri
 }
 
-// CanDisableAuthMethod checks whether disabling the given auth method would
+// MethodAvailability describes which authentication methods are currently
+// viable for one user. The three method signals would otherwise sit as
+// adjacent same-typed bool parameters, where a silent swap flips which method
+// counts as remaining; the field names make each value's role explicit at the
+// call site. The zero value reports no method available, so
+// [CanDisableMethod] refuses every disable; an omitted field undercounts the
+// remaining methods and can only make the answer more conservative (fails
+// closed).
+type MethodAvailability struct {
+	// PasskeyCount is the number of passkeys registered to the user.
+	PasskeyCount int
+	// HasPassword reports whether the user has a password set.
+	HasPassword bool
+	// OIDCEnabled reports whether OIDC login is enabled server-wide.
+	OIDCEnabled bool
+	// OIDCLinked reports whether the user has a linked OIDC identity.
+	OIDCLinked bool
+}
+
+// CanDisableMethod checks whether disabling the given auth method would
 // leave the user with no viable authentication method.
-func CanDisableAuthMethod(method Method, hasPassword bool, passkeyCount int, oidcEnabled, oidcLinked bool) bool {
+func CanDisableMethod(method Method, avail MethodAvailability) bool {
 	remaining := 0
-	if method != MethodPassword && hasPassword {
+	if method != MethodPassword && avail.HasPassword {
 		remaining++
 	}
-	if method != MethodPasskey && passkeyCount > 0 {
+	if method != MethodPasskey && avail.PasskeyCount > 0 {
 		remaining++
 	}
-	if method != MethodOIDC && oidcEnabled && oidcLinked {
+	if method != MethodOIDC && avail.OIDCEnabled && avail.OIDCLinked {
 		remaining++
 	}
 	return remaining > 0

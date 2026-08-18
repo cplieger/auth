@@ -34,7 +34,12 @@ func TestProperty_LastAuthMethodGuard(t *testing.T) {
 
 		methods := []Method{MethodPassword, MethodPasskey, MethodOIDC}
 		for _, method := range methods {
-			canDisable := CanDisableAuthMethod(method, hasPassword, passkeyCount, oidcEnabled, oidcLinked)
+			canDisable := CanDisableMethod(method, MethodAvailability{
+				HasPassword:  hasPassword,
+				PasskeyCount: passkeyCount,
+				OIDCEnabled:  oidcEnabled,
+				OIDCLinked:   oidcLinked,
+			})
 
 			remainingViable := viable
 			switch method {
@@ -544,22 +549,27 @@ func TestAuthenticate_bypass(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
 
-	on := mustAuthenticator(t, db, WithBypass(func() bool { return true }))
-	gotUser, _, err := on.Authenticate(httptest.NewRequest(http.MethodGet, "/", nil))
-	if err != nil {
-		t.Fatalf("Authenticate(bypass enabled) error = %v, want nil", err)
-	}
-	if gotUser == nil || gotUser.Role != RoleAdmin {
-		t.Fatalf("Authenticate(bypass enabled) = %+v, want a synthetic admin user", gotUser)
-	}
-
-	off := mustAuthenticator(t, db, WithBypass(func() bool { return false }))
-	if _, _, err := off.Authenticate(httptest.NewRequest(http.MethodGet, "/", nil)); !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("Authenticate(bypass disabled, no credentials) error = %v, want ErrUnauthenticated", err)
-	}
+	t.Run("active hook grants synthetic admin", func(t *testing.T) {
+		t.Parallel()
+		on := mustAuthenticator(t, db, WithBypass(func() bool { return true }))
+		gotUser, _, err := on.Authenticate(httptest.NewRequest(http.MethodGet, "/", nil))
+		if err != nil {
+			t.Fatalf("Authenticate(bypass enabled) error = %v, want nil", err)
+		}
+		if gotUser == nil || gotUser.Role != RoleAdmin {
+			t.Errorf("Authenticate(bypass enabled) = %+v, want a synthetic admin user", gotUser)
+		}
+	})
+	t.Run("inactive hook does not authenticate", func(t *testing.T) {
+		t.Parallel()
+		off := mustAuthenticator(t, db, WithBypass(func() bool { return false }))
+		if _, _, err := off.Authenticate(httptest.NewRequest(http.MethodGet, "/", nil)); !errors.Is(err, ErrUnauthenticated) {
+			t.Errorf("Authenticate(bypass disabled, no credentials) error = %v, want ErrUnauthenticated", err)
+		}
+	})
 }
 
-func TestNewAuthenticator_bypass_logs_production_warning(t *testing.T) {
+func TestNew_bypass_logs_production_warning(t *testing.T) {
 	t.Parallel()
 
 	// Construction with a hook: one Info notice, never the WARN — an
