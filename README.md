@@ -55,7 +55,7 @@ func main() {
 	// auth.New returns an error if the configuration is unusable (e.g. a
 	// __Host- cookie posture combined with a Domain or a non-root Path).
 	authenticator, err := auth.New(
-		myStore, // implements auth.AuthStore
+		myStore, // implements auth.AuthenticatorStore
 		auth.WithIdleTimeout(1*time.Hour),
 		auth.WithAbsTimeout(24*time.Hour),
 		auth.WithLoginPath("/login"),

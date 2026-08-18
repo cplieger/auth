@@ -1,4 +1,4 @@
-// Package authtest provides an in-memory implementation of [auth.AuthStore]
+// Package authtest provides an in-memory implementation of [auth.AuthenticatorStore]
 // for use in consumer tests. It is not intended for production use.
 package authtest
 

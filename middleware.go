@@ -13,9 +13,11 @@ import (
 // ErrUnauthenticated is returned when no valid credential is found.
 var ErrUnauthenticated = errors.New("unauthenticated")
 
-// AuthStore is the composed interface needed by [Authenticator] — session lookup,
-// user lookup, and API key lookup.
-type AuthStore interface { //nolint:revive // stutters as auth.AuthStore; renaming a published type of this tagged module is a breaking API change
+// AuthenticatorStore is the composed interface needed by [Authenticator] —
+// session lookup, user lookup, and API key lookup. It names the consumer it
+// serves, matching [SessionVerifierStore] and [APIKeyVerifierStore], which are
+// the per-verifier subsets this interface unions.
+type AuthenticatorStore interface {
 	SessionReader
 	SessionActivityUpdater
 	UserReader
@@ -25,7 +27,7 @@ type AuthStore interface { //nolint:revive // stutters as auth.AuthStore; renami
 // Authenticator resolves an HTTP request to an authenticated user.
 // Create with [New].
 type Authenticator struct {
-	store            AuthStore
+	store            AuthenticatorStore
 	defaultVerifiers []CredentialVerifier
 	cfg              authConfig
 	// bypassWarned dedupes the loud production-safety warning: it fires on
@@ -40,7 +42,7 @@ type Authenticator struct {
 // returns an error when the assembled configuration is unusable (see
 // [CookieConfig.Validate] and [WithActivityThrottle]). If no idle/absolute
 // timeout is provided, defaults of 1h and 24h are applied.
-func New(store AuthStore, opts ...Option) (*Authenticator, error) {
+func New(store AuthenticatorStore, opts ...Option) (*Authenticator, error) {
 	cfg := authConfig{}
 	for _, o := range opts {
 		if o != nil {

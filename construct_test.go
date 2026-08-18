@@ -20,7 +20,7 @@ func mustSessionVerifier(tb testing.TB, store SessionVerifierStore, opts ...Opti
 
 // mustAuthenticator builds an Authenticator and fails the test if the
 // configuration is rejected. See [mustSessionVerifier].
-func mustAuthenticator(tb testing.TB, store AuthStore, opts ...Option) *Authenticator {
+func mustAuthenticator(tb testing.TB, store AuthenticatorStore, opts ...Option) *Authenticator {
 	tb.Helper()
 	a, err := New(store, opts...)
 	if err != nil {

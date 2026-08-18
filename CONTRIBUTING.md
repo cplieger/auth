@@ -50,7 +50,7 @@ independently importable.
 | `auth/ratelimit`              | Dual sliding-window per-IP + per-account brute-force limiter (OWASP ASVS 2.2.1). Stdlib-only.                                                                               |
 | `auth/oidc`                   | OIDC provider config validation and helpers.                                                                                                                                |
 | `auth/webauthn`               | WebAuthn/FIDO2 helpers (e.g. AAGUID formatting).                                                                                                                            |
-| `auth/authtest`               | Exported in-memory `SessionStore`/`AuthStore` (`NewMemStore`, `AddUser`) for consumer tests. Not for production.                                                            |
+| `auth/authtest`               | Exported in-memory `SessionStore`/`AuthenticatorStore` (`NewMemStore`, `AddUser`) for consumer tests. Not for production.                                                            |
 
 Storage is injected by the consumer: the library defines interfaces
 (`SessionStore`, the role interfaces above, `CredentialVerifier`) and never
