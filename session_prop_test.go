@@ -18,10 +18,10 @@ func TestProperty_ValidateSession_monotonicity(t *testing.T) {
 		sess := &Session{CreatedAt: created, LastActivity: lastActivity}
 
 		now := lastActivity.Add(time.Duration(rapid.Int64Range(0, int64(48*time.Hour)).Draw(t, "elapsed")))
-		err1 := ValidateSession(sess, idleTimeout, absTimeout, now)
+		err1 := ValidateSession(sess, SessionTimeouts{Idle: idleTimeout, Absolute: absTimeout}, now)
 
 		earlier := lastActivity.Add(time.Duration(rapid.Int64Range(0, int64(now.Sub(lastActivity))).Draw(t, "earlier")))
-		err2 := ValidateSession(sess, idleTimeout, absTimeout, earlier)
+		err2 := ValidateSession(sess, SessionTimeouts{Idle: idleTimeout, Absolute: absTimeout}, earlier)
 
 		if err1 == nil && err2 != nil {
 			t.Fatalf("valid at %v but invalid at earlier %v", now, earlier)

@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-// TestNewAuthenticator_NoOptions_AppliesDefaults verifies that constructing an
+// TestNew_NoOptions_AppliesDefaults verifies that constructing an
 // Authenticator with NO options applies the same defaults as the old struct-field
 // config: IdleTimeout=1h, AbsTimeout=24h, LoginPath="/login", Logger=slog.Default.
-func TestNewAuthenticator_NoOptions_AppliesDefaults(t *testing.T) {
+func TestNew_NoOptions_AppliesDefaults(t *testing.T) {
 	t.Parallel()
 	a := mustAuthenticator(t, newFakeSessionStore())
 	if a.cfg.idleTimeout != DefaultIdleTimeout {
@@ -84,9 +84,9 @@ func TestNewSessionVerifier_NoOptions_SessionValid(t *testing.T) {
 	}
 }
 
-// TestNewAuthenticator_NoOptions_SessionValid verifies the full Authenticator
+// TestNew_NoOptions_SessionValid verifies the full Authenticator
 // flow without explicit timeout options.
-func TestNewAuthenticator_NoOptions_SessionValid(t *testing.T) {
+func TestNew_NoOptions_SessionValid(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
 	ctx := t.Context()
@@ -249,8 +249,8 @@ func TestNewHasher_NoPepper_EqualsOldBehavior(t *testing.T) {
 	}
 }
 
-// TestNewAuthenticator_NilOptionSlice verifies passing an explicit nil slice works.
-func TestNewAuthenticator_NilOptionSlice(t *testing.T) {
+// TestNew_NilOptionSlice verifies passing an explicit nil slice works.
+func TestNew_NilOptionSlice(t *testing.T) {
 	t.Parallel()
 	var opts []Option
 	a := mustAuthenticator(t, newFakeSessionStore(), opts...)

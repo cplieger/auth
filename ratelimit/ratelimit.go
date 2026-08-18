@@ -70,24 +70,37 @@ func normalizeConfig(cfg Config) Config {
 	return cfg
 }
 
+// ClientIP is the per-client IP dimension key of the limiter. It is a
+// distinct type so an IP and a username — both strings — cannot be swapped
+// silently at a call site: the two dimensions have different windows and
+// different limits, so a swap would quietly change the security posture.
+type ClientIP string
+
+// Username is the per-account dimension key of the limiter. See [ClientIP]
+// for why the two key types are distinct.
+type Username string
+
 // Checker is the narrow interface consumed by callers (e.g. HTTP auth handlers).
 // It decouples request handling from the concrete sliding-window implementation.
 type Checker interface {
-	Allow(ip, username string) (allowed bool, retryAfter time.Duration)
-	Record(ip, username string)
-	Reset(ip, username string)
+	Allow(ip ClientIP, username Username) (allowed bool, retryAfter time.Duration)
+	Record(ip ClientIP, username Username)
+	Reset(ip ClientIP, username Username)
 }
 
 // Compile-time assertion that *RateLimiter satisfies Checker.
 var _ Checker = (*RateLimiter)(nil)
 
 // RateLimiter tracks failed authentication attempts per IP and per account
-// using dual sliding windows (OWASP ASVS 2.2.1).
+// using dual sliding windows (OWASP ASVS 2.2.1). A RateLimiter must be
+// created with [New]: the zero value has nil window maps (Record panics), no
+// prune goroutine, and a nil cancel func (Shutdown panics dereferencing it).
 type RateLimiter struct {
 	ipWindows     map[string]*slidingWindow
 	acctWindows   map[string]*slidingWindow
 	nowFunc       func() time.Time
 	cancel        context.CancelFunc
+	done          chan struct{}
 	ipWindow      time.Duration
 	acctWindow    time.Duration
 	pruneInterval time.Duration
@@ -104,10 +117,11 @@ type slidingWindow struct {
 	timestamps []time.Time
 }
 
-// NewRateLimiter creates a rate limiter with the given configuration.
+// New creates a rate limiter with the given configuration.
 // A background goroutine prunes stale entries at cfg.PruneInterval.
-// The goroutine stops when ctx is cancelled. Call Stop for explicit shutdown.
-func NewRateLimiter(ctx context.Context, cfg Config) *RateLimiter {
+// The goroutine stops when ctx is cancelled; call [RateLimiter.Shutdown] to
+// stop it explicitly and wait for it to exit.
+func New(ctx context.Context, cfg Config) *RateLimiter {
 	cfg = normalizeConfig(cfg)
 	ctx, cancel := context.WithCancel(ctx)
 	rl := &RateLimiter{
@@ -120,6 +134,7 @@ func NewRateLimiter(ctx context.Context, cfg Config) *RateLimiter {
 		maxEntries:    cfg.MaxEntries,
 		pruneInterval: cfg.PruneInterval,
 		cancel:        cancel,
+		done:          make(chan struct{}),
 		nowFunc:       time.Now,
 	}
 	go rl.pruneLoop(ctx)
@@ -132,14 +147,14 @@ func NewRateLimiter(ctx context.Context, cfg Config) *RateLimiter {
 // (a missing key carries no per-client signal and would otherwise lump
 // unrelated callers into one shared bucket); callers should supply a real
 // per-client IP so the IP dimension applies.
-func (rl *RateLimiter) Allow(ip, username string) (allowed bool, retryAfter time.Duration) {
+func (rl *RateLimiter) Allow(ip ClientIP, username Username) (allowed bool, retryAfter time.Duration) {
 	now := rl.nowFunc()
 
 	var ipRetry, acctRetry time.Duration
 
 	if ip != "" {
 		rl.muIP.Lock()
-		if w, ok := rl.ipWindows[ip]; ok {
+		if w, ok := rl.ipWindows[string(ip)]; ok {
 			ipRetry = w.retryAfter(now, rl.ipWindow, rl.ipLimit)
 		}
 		rl.muIP.Unlock()
@@ -147,7 +162,7 @@ func (rl *RateLimiter) Allow(ip, username string) (allowed bool, retryAfter time
 
 	if username != "" {
 		rl.muAcct.Lock()
-		if w, ok := rl.acctWindows[username]; ok {
+		if w, ok := rl.acctWindows[string(username)]; ok {
 			acctRetry = w.retryAfter(now, rl.acctWindow, rl.acctLimit)
 		}
 		rl.muAcct.Unlock()
@@ -164,18 +179,18 @@ func (rl *RateLimiter) Allow(ip, username string) (allowed bool, retryAfter time
 // Record records a failed authentication attempt in the IP and account
 // sliding windows. An empty ip or username skips that dimension, mirroring
 // Allow and Reset.
-func (rl *RateLimiter) Record(ip, username string) {
+func (rl *RateLimiter) Record(ip ClientIP, username Username) {
 	now := rl.nowFunc()
 
 	if ip != "" {
 		rl.muIP.Lock()
-		rl.recordLocked(rl.ipWindows, ip, now, rl.ipWindow, rl.ipLimit, "per-IP", &rl.ipCapWarned)
+		rl.recordLocked(rl.ipWindows, string(ip), now, rl.ipWindow, rl.ipLimit, "per-IP", &rl.ipCapWarned)
 		rl.muIP.Unlock()
 	}
 
 	if username != "" {
 		rl.muAcct.Lock()
-		rl.recordLocked(rl.acctWindows, username, now, rl.acctWindow, rl.acctLimit, "per-account", &rl.acctCapWarned)
+		rl.recordLocked(rl.acctWindows, string(username), now, rl.acctWindow, rl.acctLimit, "per-account", &rl.acctCapWarned)
 		rl.muAcct.Unlock()
 	}
 }
@@ -256,30 +271,48 @@ func evictLeastRecentlyActive(windows map[string]*slidingWindow, now time.Time, 
 	}
 }
 
-// Stop stops the background prune goroutine.
-func (rl *RateLimiter) Stop() {
+// Shutdown stops the background prune goroutine and blocks until it has
+// exited or ctx expires, returning nil in the first case and ctx.Err() in the
+// second (in which case the goroutine is still winding down). Completion is
+// consulted before the context — the stdlib [net/http.Server.Shutdown] shape —
+// so once the goroutine has exited, Shutdown returns nil deterministically
+// even when ctx is already expired. It is safe to call more than once.
+func (rl *RateLimiter) Shutdown(ctx context.Context) error {
 	rl.cancel()
+	select {
+	case <-rl.done:
+		return nil
+	default:
+	}
+	select {
+	case <-rl.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Reset clears the sliding window entries for the given IP and username.
 // Call after a successful authentication to prevent permanent soft-lockout
 // (OWASP ASVS 2.2.1).
-func (rl *RateLimiter) Reset(ip, username string) {
+func (rl *RateLimiter) Reset(ip ClientIP, username Username) {
 	if ip != "" {
 		rl.muIP.Lock()
-		delete(rl.ipWindows, ip)
+		delete(rl.ipWindows, string(ip))
 		rl.muIP.Unlock()
 	}
 
 	if username != "" {
 		rl.muAcct.Lock()
-		delete(rl.acctWindows, username)
+		delete(rl.acctWindows, string(username))
 		rl.muAcct.Unlock()
 	}
 }
 
-// pruneLoop removes stale entries at the configured prune interval.
+// pruneLoop removes stale entries at the configured prune interval. On exit
+// it closes done, which is what [RateLimiter.Shutdown] waits on.
 func (rl *RateLimiter) pruneLoop(ctx context.Context) {
+	defer close(rl.done)
 	ticker := time.NewTicker(rl.pruneInterval)
 	defer ticker.Stop()
 	for {

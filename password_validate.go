@@ -29,17 +29,13 @@ const PasswordMaxLength = 128
 // k-anonymity API.
 const hibpRequestTimeout = 5 * time.Second
 
-// ValidatePasswordLength enforces minimum and maximum password length.
-// Maximum length (128 chars) prevents DoS via Argon2id processing of
-// extremely long inputs.
-func ValidatePasswordLength(password string, passwordOnly bool) error {
+// validatePasswordLength enforces the shared maximum (128 chars, preventing
+// DoS via Argon2id processing of extremely long inputs) and the given minimum,
+// both counted in runes.
+func validatePasswordLength(password string, minLen int) error {
 	runeLen := len([]rune(password))
 	if runeLen > PasswordMaxLength {
 		return fmt.Errorf("password must be at most %d characters", PasswordMaxLength)
-	}
-	minLen := PasswordMinLengthMultiFactor
-	if passwordOnly {
-		minLen = PasswordMinLengthSolo
 	}
 	if runeLen < minLen {
 		return fmt.Errorf("password must be at least %d characters", minLen)
@@ -47,16 +43,51 @@ func ValidatePasswordLength(password string, passwordOnly bool) error {
 	return nil
 }
 
+// ValidateMultiFactorPasswordLength enforces minimum and maximum password
+// length for an account where the password is NOT the sole sufficient factor
+// (minimum [PasswordMinLengthMultiFactor]). Use [ValidateSoloPasswordLength]
+// when password login alone grants access. Neither arm kept the pre-v4 name,
+// so a migrating caller must choose an arm explicitly instead of silently
+// inheriting the weaker minimum.
+func ValidateMultiFactorPasswordLength(password string) error {
+	return validatePasswordLength(password, PasswordMinLengthMultiFactor)
+}
+
+// ValidateSoloPasswordLength enforces minimum and maximum password length for
+// an account where password login is enabled and thus a sole sufficient
+// factor (minimum [PasswordMinLengthSolo]).
+func ValidateSoloPasswordLength(password string) error {
+	return validatePasswordLength(password, PasswordMinLengthSolo)
+}
+
+// PasswordContext carries the user-specific values a candidate password must
+// not trivially embed. Passing it as a field-named struct keeps the password
+// and the username from sitting as adjacent same-typed parameters, where a
+// silent swap would validate the username against itself.
+//
+// WARNING: the zero value FAILS OPEN — it turns every context check off.
+// An empty Username disables the username-substring check and an empty
+// ForbiddenWords disables the forbidden-word check, so a partial literal
+// silently validates less, not more. Populate every field the account has.
+type PasswordContext struct {
+	// Username is rejected as a password substring when it is at least four
+	// characters long (shorter names over-reject common words).
+	Username string
+	// ForbiddenWords are app-specific words (site name, product name) the
+	// password must not contain; empty entries are ignored.
+	ForbiddenWords []string
+}
+
 // ValidatePasswordContext rejects passwords that trivially embed the username
-// or any of the provided forbidden words.
-func ValidatePasswordContext(password, username string, forbiddenWords []string) error {
+// or any of the forbidden words in pctx.
+func ValidatePasswordContext(password string, pctx PasswordContext) error {
 	lower := strings.ToLower(password)
-	for _, word := range forbiddenWords {
+	for _, word := range pctx.ForbiddenWords {
 		if word != "" && strings.Contains(lower, strings.ToLower(word)) {
 			return errors.New("password must not contain a forbidden word")
 		}
 	}
-	if len(username) >= 4 && strings.Contains(lower, strings.ToLower(username)) {
+	if len(pctx.Username) >= 4 && strings.Contains(lower, strings.ToLower(pctx.Username)) {
 		return errors.New("password must not contain your username")
 	}
 	return nil

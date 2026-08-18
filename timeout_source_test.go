@@ -51,8 +51,8 @@ func TestSessionVerifier_TimeoutSource_ResolvedPerVerify(t *testing.T) {
 	idle.Store(int64(10 * time.Minute))
 	v := mustSessionVerifier(t, db,
 		WithCookie(timeoutSourceCookie),
-		WithTimeoutSource(func() (time.Duration, time.Duration) {
-			return time.Duration(idle.Load()), 24 * time.Hour
+		WithTimeoutSource(func() SessionTimeouts {
+			return SessionTimeouts{Idle: time.Duration(idle.Load()), Absolute: 24 * time.Hour}
 		}))
 
 	r := throttleRequest(plaintext)
@@ -78,7 +78,7 @@ func TestSessionVerifier_TimeoutSource_NonPositiveFallsBackToStatic(t *testing.T
 	v := mustSessionVerifier(t, db,
 		WithCookie(timeoutSourceCookie),
 		WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
-		WithTimeoutSource(func() (time.Duration, time.Duration) { return 0, -time.Hour }))
+		WithTimeoutSource(func() SessionTimeouts { return SessionTimeouts{Idle: 0, Absolute: -time.Hour} }))
 
 	user, _, err := v.Verify(t.Context(), throttleRequest(plaintext))
 	if err != nil || user == nil {
@@ -87,7 +87,7 @@ func TestSessionVerifier_TimeoutSource_NonPositiveFallsBackToStatic(t *testing.T
 }
 
 // TestAuthenticator_TimeoutSource_ThreadsToDefaultChain confirms
-// NewAuthenticator passes the source through to the default session verifier:
+// New passes the source through to the default session verifier:
 // a 30-minute-old session fails authentication once the source's idle is 10
 // minutes, even though the static default (1h) would accept it.
 func TestAuthenticator_TimeoutSource_ThreadsToDefaultChain(t *testing.T) {
@@ -96,8 +96,8 @@ func TestAuthenticator_TimeoutSource_ThreadsToDefaultChain(t *testing.T) {
 
 	a := mustAuthenticator(t, db,
 		WithCookie(timeoutSourceCookie),
-		WithTimeoutSource(func() (time.Duration, time.Duration) {
-			return 10 * time.Minute, 24 * time.Hour
+		WithTimeoutSource(func() SessionTimeouts {
+			return SessionTimeouts{Idle: 10 * time.Minute, Absolute: 24 * time.Hour}
 		}))
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -121,8 +121,8 @@ func TestSessionVerifier_TimeoutSource_ClampsThrottleToHalfIdle(t *testing.T) {
 			WithCookie(timeoutSourceCookie),
 			WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
 			WithActivityThrottle(80*time.Millisecond),
-			WithTimeoutSource(func() (time.Duration, time.Duration) {
-				return 100 * time.Millisecond, 24 * time.Hour
+			WithTimeoutSource(func() SessionTimeouts {
+				return SessionTimeouts{Idle: 100 * time.Millisecond, Absolute: 24 * time.Hour}
 			}))
 		ctx := t.Context()
 		r := throttleRequest(plaintext)

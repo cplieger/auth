@@ -113,13 +113,13 @@ func (f *fakeSessionStore) DeleteUserSessions(_ context.Context, userID int64, e
 	return nil
 }
 
-func (f *fakeSessionStore) CleanupExpiredSessions(_ context.Context, now time.Time, idleTimeout, absTimeout time.Duration) (int64, error) {
+func (f *fakeSessionStore) CleanupExpiredSessions(_ context.Context, now time.Time, timeouts SessionTimeouts) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var deleted int64
 	for hash, s := range f.sessions {
-		idleExpired := now.Sub(s.LastActivity) > idleTimeout
-		absExpired := now.Sub(s.CreatedAt) > absTimeout
+		idleExpired := now.Sub(s.LastActivity) > timeouts.Idle
+		absExpired := now.Sub(s.CreatedAt) > timeouts.Absolute
 		if idleExpired || absExpired {
 			delete(f.sessions, hash)
 			deleted++

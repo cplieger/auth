@@ -59,29 +59,29 @@ func TestProperty_PasswordLengthValidation(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(t *rapid.T) {
 		short := rapid.StringN(0, 7, -1).Draw(t, "short")
-		if err := ValidatePasswordLength(short, false); err == nil {
-			t.Fatalf("ValidatePasswordLength(%q, false) = nil", short)
+		if err := ValidateMultiFactorPasswordLength(short); err == nil {
+			t.Fatalf("ValidateMultiFactorPasswordLength(%q) = nil", short)
 		}
 
 		valid := rapid.StringN(8, 128, -1).Draw(t, "valid")
-		if err := ValidatePasswordLength(valid, false); err != nil {
-			t.Fatalf("ValidatePasswordLength(%q, false) = %v", valid, err)
+		if err := ValidateMultiFactorPasswordLength(valid); err != nil {
+			t.Fatalf("ValidateMultiFactorPasswordLength(%q) = %v", valid, err)
 		}
 
 		shortSolo := rapid.StringN(0, 14, -1).Draw(t, "shortSolo")
-		if err := ValidatePasswordLength(shortSolo, true); err == nil {
-			t.Fatalf("ValidatePasswordLength(%q, true) = nil", shortSolo)
+		if err := ValidateSoloPasswordLength(shortSolo); err == nil {
+			t.Fatalf("ValidateSoloPasswordLength(%q) = nil", shortSolo)
 		}
 
 		validSolo := rapid.StringN(15, 128, -1).Draw(t, "validSolo")
-		if err := ValidatePasswordLength(validSolo, true); err != nil {
-			t.Fatalf("ValidatePasswordLength(%q, true) = %v", validSolo, err)
+		if err := ValidateSoloPasswordLength(validSolo); err != nil {
+			t.Fatalf("ValidateSoloPasswordLength(%q) = %v", validSolo, err)
 		}
 
 		// Max length enforcement
 		tooLong := rapid.StringN(129, 256, -1).Draw(t, "tooLong")
-		if err := ValidatePasswordLength(tooLong, false); err == nil {
-			t.Fatalf("ValidatePasswordLength(len=%d, false) = nil, want error", len([]rune(tooLong)))
+		if err := ValidateMultiFactorPasswordLength(tooLong); err == nil {
+			t.Fatalf("ValidateMultiFactorPasswordLength(len=%d) = nil, want error", len([]rune(tooLong)))
 		}
 	})
 }
@@ -160,13 +160,13 @@ func TestVerifyPassword_oneByteKey_parsesButDoesNotMatch(t *testing.T) {
 	}
 }
 
-func TestValidatePasswordLength_exactlyMax_accepted(t *testing.T) {
+func TestValidateMultiFactorPasswordLength_exactlyMax_accepted(t *testing.T) {
 	t.Parallel()
 	// A password of exactly PasswordMaxLength runes is accepted; rejection
 	// begins strictly past the maximum.
 	pw := strings.Repeat("a", PasswordMaxLength)
-	if err := ValidatePasswordLength(pw, false); err != nil {
-		t.Errorf("ValidatePasswordLength(len=%d, false) = %v, want nil", PasswordMaxLength, err)
+	if err := ValidateMultiFactorPasswordLength(pw); err != nil {
+		t.Errorf("ValidateMultiFactorPasswordLength(len=%d) = %v, want nil", PasswordMaxLength, err)
 	}
 }
 

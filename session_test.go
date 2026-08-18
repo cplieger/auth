@@ -74,7 +74,7 @@ func TestProperty_SessionExpiryEnforcement(t *testing.T) {
 		idleExpired := lastActivityAge > idleTimeout
 		absExpired := createdAge > absTimeout
 
-		err := ValidateSession(sess, idleTimeout, absTimeout, now)
+		err := ValidateSession(sess, SessionTimeouts{Idle: idleTimeout, Absolute: absTimeout}, now)
 
 		if idleExpired || absExpired || oidcExpired {
 			if err == nil {
@@ -146,7 +146,7 @@ func TestProperty_SessionCleanupCompleteness(t *testing.T) {
 			}
 		}
 
-		if _, err := db.CleanupExpiredSessions(ctx, now, idleTimeout, absTimeout); err != nil {
+		if _, err := db.CleanupExpiredSessions(ctx, now, SessionTimeouts{Idle: idleTimeout, Absolute: absTimeout}); err != nil {
 			rt.Fatalf("CleanupExpiredSessions: %v", err)
 		}
 
@@ -160,7 +160,7 @@ func TestProperty_SessionCleanupCompleteness(t *testing.T) {
 			}
 		}
 
-		deleted2, err := db.CleanupExpiredSessions(ctx, now, idleTimeout, absTimeout)
+		deleted2, err := db.CleanupExpiredSessions(ctx, now, SessionTimeouts{Idle: idleTimeout, Absolute: absTimeout})
 		if err != nil {
 			rt.Fatalf("second cleanup: %v", err)
 		}
@@ -200,7 +200,7 @@ func TestValidateSession_timeoutBoundaries(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			sess := &Session{LastActivity: tc.lastActivity, CreatedAt: tc.createdAt}
-			err := ValidateSession(sess, tc.idle, tc.abs, now)
+			err := ValidateSession(sess, SessionTimeouts{Idle: tc.idle, Absolute: tc.abs}, now)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("ValidateSession(idle=%v, abs=%v, lastActivity %v ago, created %v ago) = %v, wantErr=%v",
 					tc.idle, tc.abs, now.Sub(tc.lastActivity), now.Sub(tc.createdAt), err, tc.wantErr)

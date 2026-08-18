@@ -45,10 +45,10 @@ func TestPosture_ForceSecure_CookieAttributes(t *testing.T) {
 	cfg.SetCookie(w, r, "tok", 3600)
 	c := w.Result().Cookies()[0]
 	if !c.Secure {
-		t.Fatal("PostureForceSecure should always set Secure=true")
+		t.Errorf("PostureForceSecure cookie Secure = %v, want true regardless of request scheme", c.Secure)
 	}
 	if c.Name != "__Host-sess" {
-		t.Fatalf("expected __Host-sess, got %q", c.Name)
+		t.Errorf("PostureForceSecure cookie name = %q, want %q", c.Name, "__Host-sess")
 	}
 }
 
@@ -84,14 +84,16 @@ func TestCSRFToken_SessionBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Must fail verification against a different session
-	if err := VerifyCSRFToken(key, "sessionB", tok, time.Hour); err != ErrTokenInvalid {
-		t.Fatalf("expected ErrTokenInvalid, got %v", err)
-	}
-	// Must pass against the same session
-	if err := VerifyCSRFToken(key, "sessionA", tok, time.Hour); err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
+	t.Run("rejects a different session", func(t *testing.T) {
+		if err := VerifyCSRFToken(key, "sessionB", tok, time.Hour); err != ErrTokenInvalid {
+			t.Errorf("VerifyCSRFToken(other session) = %v, want ErrTokenInvalid", err)
+		}
+	})
+	t.Run("accepts the issuing session", func(t *testing.T) {
+		if err := VerifyCSRFToken(key, "sessionA", tok, time.Hour); err != nil {
+			t.Errorf("VerifyCSRFToken(same session) = %v, want nil", err)
+		}
+	})
 }
 
 // --- TrustForwardedHeaders Tests ---
@@ -139,16 +141,16 @@ func TestRotateSessionToken_ProducesNewToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	if gotOldHash != oldHash {
-		t.Fatal("old hash mismatch")
+		t.Errorf("RotateSessionToken() oldHash = %q, want %q", gotOldHash, oldHash)
 	}
 	if newPlain == oldPlain {
-		t.Fatal("new plaintext should differ")
+		t.Error("RotateSessionToken() new plaintext equals the old one, want a fresh token")
 	}
 	if newHash == oldHash {
-		t.Fatal("new hash should differ")
+		t.Error("RotateSessionToken() new hash equals the old one, want a fresh hash")
 	}
-	if SessionHash(newPlain) != newHash {
-		t.Fatal("new hash doesn't match plaintext")
+	if got := SessionHash(newPlain); got != newHash {
+		t.Errorf("SessionHash(new plaintext) = %q, want the returned new hash %q", got, newHash)
 	}
 }
 
@@ -191,14 +193,12 @@ func TestRotateSessionToken_OldTokenBecomesInvalid(t *testing.T) {
 	}
 
 	// Old token should no longer resolve
-	sess, _, _ := db.GetSessionByHash(ctx, oldHash)
-	if sess != nil {
-		t.Fatal("old session should be deleted after rotation")
+	if sess, _, _ := db.GetSessionByHash(ctx, oldHash); sess != nil {
+		t.Error("old session still resolves after rotation, want deleted")
 	}
 	// New token should resolve
-	sess, _, _ = db.GetSessionByHash(ctx, newHash)
-	if sess == nil {
-		t.Fatal("new session should exist after rotation")
+	if sess, _, _ := db.GetSessionByHash(ctx, newHash); sess == nil {
+		t.Error("new session does not resolve after rotation, want present")
 	}
 }
 

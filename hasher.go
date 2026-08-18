@@ -70,7 +70,9 @@ type Hasher struct {
 }
 
 // NewHasher creates a Hasher with the given params. Returns an error if params
-// are invalid. Use [WithPepper] to enable HMAC peppering.
+// are invalid. Use [WithPepper] to enable HMAC peppering. A Hasher must be
+// constructed with NewHasher: the zero value has all-zero Argon2 parameters,
+// which panic inside x/crypto's argon2 on first use.
 func NewHasher(params Argon2Params, opts ...HasherOption) (*Hasher, error) {
 	if err := params.Validate(); err != nil {
 		return nil, err

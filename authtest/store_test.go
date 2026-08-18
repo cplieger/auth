@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cplieger/auth/v3"
-	"github.com/cplieger/auth/v3/authtest"
+	"github.com/cplieger/auth/v4"
+	"github.com/cplieger/auth/v4/authtest"
 )
 
 func TestMemStore_implements_SessionStore(t *testing.T) {

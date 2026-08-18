@@ -1,6 +1,6 @@
 # auth
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/cplieger/auth.svg)](https://pkg.go.dev/github.com/cplieger/auth)
+[![Go Reference](https://pkg.go.dev/badge/github.com/cplieger/auth/v4.svg)](https://pkg.go.dev/github.com/cplieger/auth/v4)
 [![Go version](https://img.shields.io/github/go-mod/go-version/cplieger/auth)](https://github.com/cplieger/auth/blob/main/go.mod)
 [![Test coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/cplieger/auth/badges/coverage.json)](https://github.com/cplieger/auth/actions/workflows/coverage.yml)
 [![Mutation](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/cplieger/auth/badges/mutation.json)](https://github.com/cplieger/auth/issues?q=label%3Agremlins-tracker)
@@ -18,7 +18,7 @@ Dependencies: `golang.org/x/crypto`, `github.com/go-webauthn/webauthn`, `github.
 ## Install
 
 ```sh
-go get github.com/cplieger/auth/v2@latest
+go get github.com/cplieger/auth/v4@latest
 ```
 
 ## Usage
@@ -31,7 +31,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cplieger/auth/v2"
+	"github.com/cplieger/auth/v4"
 )
 
 func main() {
@@ -52,10 +52,10 @@ func main() {
 	_, _ = hash2, ok2
 
 	// Set up authenticator with your store implementation (functional options).
-	// NewAuthenticator returns an error if the configuration is unusable (e.g. a
+	// auth.New returns an error if the configuration is unusable (e.g. a
 	// __Host- cookie posture combined with a Domain or a non-root Path).
-	authenticator, err := auth.NewAuthenticator(
-		myStore, // implements auth.SessionStore
+	authenticator, err := auth.New(
+		myStore, // implements auth.AuthStore
 		auth.WithIdleTimeout(1*time.Hour),
 		auth.WithAbsTimeout(24*time.Hour),
 		auth.WithLoginPath("/login"),
@@ -92,7 +92,7 @@ All configuration is via functional options and function parameters. The library
 - `WithTimeoutSource(fn)`: resolve the idle/absolute session timeouts per verification from a callback (for hot-reloadable config). Non-positive callback values fall back to the static options; the activity throttle is clamped to half the resolved idle timeout so a shrunken idle cannot expire active sessions.
 - `NewHasher(params, ...HasherOption)`: configurable Argon2id parameters; use `WithPepper([]byte)` for HMAC peppering
 - `GenerateAPIKey(prefix)`: pass your key prefix (e.g. `"ak_"`)
-- `ValidatePasswordContext(password, username, forbiddenWords)`: pass app-specific forbidden words
+- `ValidatePasswordContext(password, PasswordContext{Username, ForbiddenWords})`: pass app-specific forbidden words
 
 ### Cookie Configuration
 
@@ -105,7 +105,7 @@ cfg := auth.CookieConfig{
     SameSite: http.SameSiteLaxMode,  // (default: Lax)
     // TrustForwardedHeaders: true,  // only behind a proxy that always sets X-Forwarded-Proto
 }
-authenticator, err := auth.NewAuthenticator(myStore, auth.WithCookie(cfg))
+authenticator, err := auth.New(myStore, auth.WithCookie(cfg))
 if err != nil {
     log.Fatalf("auth: %v", err) // cfg rejected: see CookieConfig.Validate
 }
@@ -124,37 +124,42 @@ if err != nil {
 
 ## API
 
-Grouped summary of the exported surface. Signatures and full semantics live in the [Go Reference](https://pkg.go.dev/github.com/cplieger/auth/v2).
+Grouped summary of the exported surface. Signatures and full semantics live in the [Go Reference](https://pkg.go.dev/github.com/cplieger/auth/v4).
 
-- **Password hashing:** `HashPassword` / `VerifyPassword` / `NeedsRehash` (Argon2id PHC strings, OWASP defaults), `DummyHash` (constant-time timing equalization for unknown-user logins), `DefaultArgon2Params`, `NewHasher` + `WithPepper` (custom parameters, HMAC pepper), `Hasher.Hash` / `Hasher.Verify` / `Hasher.NeedsRehash`, `ValidatePasswordLength` (NIST, max 128), `ValidatePasswordContext`, `CheckBreachedPassword` (HIBP k-anonymity).
-- **Sessions and tokens:** `GenerateSessionToken` (256-bit), `RotateSessionToken`, `ValidateSession`, `SessionHash`, `HexSHA256`, `CSRFToken` / `VerifyCSRFToken` (bound to the session hash), `GenerateOpaqueToken` / `VerifyOpaqueToken` (password reset, email verification).
+- **Password hashing:** `HashPassword` / `VerifyPassword` / `NeedsRehash` (Argon2id PHC strings, OWASP defaults), `DummyHash` (constant-time timing equalization for unknown-user logins), `DefaultArgon2Params`, `NewHasher` + `WithPepper` (custom parameters, HMAC pepper), `Hasher.Hash` / `Hasher.Verify` / `Hasher.NeedsRehash`, `ValidateMultiFactorPasswordLength` / `ValidateSoloPasswordLength` (NIST, max 128; the solo variant applies the stricter minimum for accounts where password login is the sole factor), `ValidatePasswordContext`, `CheckBreachedPassword` (HIBP k-anonymity).
+- **Sessions and tokens:** `GenerateSessionToken` (256-bit), `RotateSessionToken`, `ValidateSession` (takes a `SessionTimeouts{Idle, Absolute}` pair), `SessionHash`, `HexSHA256`, `CSRFToken` / `VerifyCSRFToken` (bound to the session hash), `GenerateOpaqueToken` / `VerifyOpaqueToken` (password reset, email verification).
 - **Cookies:** `CookieConfig.CookieName` / `SetCookie` / `ReadCookie` / `ClearCookie`, plus the default-config free functions `SessionCookieName` / `SetSessionCookie` / `ReadSessionCookie` / `ClearSessionCookie`.
 - **API keys:** `GenerateAPIKey`, `VerifyAPIKey` (constant-time hash equality plus expiry check), `APIKeyHash`.
-- **Middleware and guards:** `NewAuthenticator` and `NewSessionVerifier` (both return an error on an unusable config; see `CookieConfig.Validate`), `NewAPIKeyVerifier` (reads the `X-Api-Key` header only, never a URL query parameter, per CWE-598), `Authenticator.Authenticate` / `Authenticator.RequireAuth`, `HasRole` (flat RBAC), `ValidateRedirectURI` (relative paths only), `CanDisableAuthMethod`, `IsBrowserRequest`. The `WithVerifiers` / `WithActivityThrottle` / `WithUnauthorizedResponse` / `WithTimeoutSource` options are described under [Configuration](#configuration).
-- **Interfaces:** `CredentialVerifier` (pluggable credential verification), `SessionStore` and `webauthn.Store` (consumer-implemented storage), `store.Composite` (composite store interface, subpackage `auth/store`).
-- **WebAuthn (`github.com/cplieger/auth/v2/webauthn`):** `NewWebAuthn`, `NewWebAuthnUser`, `BeginRegistration` / `FinishRegistration` / `BeginLogin` / `FinishLogin`, `BeginConditionalLogin` (conditional mediation, autofill UI), `CompleteLogin` (store-backed login completion; the caller keeps account-status policy and session creation).
-- **OIDC (`github.com/cplieger/auth/v2/oidc`):** `NewProvider` and `ValidateConfig` (both take an `oidc.Config`), `GenerateState`, `GeneratePKCE` (S256), `Provider.AuthorizationURL`, `Provider.Exchange` (verifies the ID token; an empty or mismatched nonce fails closed with `ErrOIDCNonceMismatch`), `ResolveUser` (maps an OIDC identity by issuer and subject to a user; `ErrOIDCNoUsername` when the token carries neither `preferred_username` nor `email`).
+- **Middleware and guards:** `New` and `NewSessionVerifier` (both return an error on an unusable config; see `CookieConfig.Validate`), `NewAPIKeyVerifier` (reads the `X-Api-Key` header only, never a URL query parameter, per CWE-598), `Authenticator.Authenticate` / `Authenticator.RequireAuth`, `HasRole` (flat RBAC), `ValidateRedirectURI` (relative paths only), `CanDisableMethod` (takes a `MethodAvailability` struct), `IsBrowserRequest`. The `WithVerifiers` / `WithActivityThrottle` / `WithUnauthorizedResponse` / `WithTimeoutSource` options are described under [Configuration](#configuration).
+- **Interfaces:** `CredentialVerifier` (pluggable credential verification), `SessionStore` and `webauthn.Store` (consumer-implemented storage), and the persistence-SPI role interfaces `UserStore` / `SessionPersister` / `PasskeyStore` / `KeyStore` / `OIDCStateStore` — implement the roles your handler layer needs.
+- **WebAuthn (`github.com/cplieger/auth/v4/webauthn`):** `New` (takes an `RPConfig{ID, DisplayName, Origins}`), `NewUser`, `BeginRegistration` / `FinishRegistration` / `BeginLogin` / `FinishLogin`, `BeginConditionalLogin` (conditional mediation, autofill UI), `CompleteLogin` (store-backed login completion; the caller keeps account-status policy and session creation).
+- **OIDC (`github.com/cplieger/auth/v4/oidc`):** `NewProvider` and `ValidateConfig` (both take an `oidc.Config`), `GenerateState`, `GeneratePKCE` (S256; both mint their results as the distinct types below), `Provider.AuthorizationURL` and `Provider.Exchange` (distinct `State` / `Nonce` / `CodeChallenge` / `Code` / `CodeVerifier` string types keep the opaque randoms from being transposed — `State`, `Nonce`, and `CodeVerifier` are aliases of the root `auth.OIDCState` / `auth.OIDCNonce` / `auth.OIDCCodeVerifier` types used by the `OIDCStateStore` SPI; AuthorizationURL rejects an empty state or code challenge and Exchange rejects an empty or mismatched nonce, both failing closed with descriptive errors — nonce mismatches with `ErrNonceMismatch`), `ResolveUser` (maps an OIDC identity by issuer and subject to a user; `ErrNoUsername` when the token carries neither `preferred_username` nor `email`).
 
 ## Subpackages
 
-### `auth/store`
-
-Composite interface `store.Composite`.
-
 ### `auth/ratelimit`
 
-Dual sliding-window per-IP + per-account authentication brute-force rate limiter (OWASP ASVS 2.2.1). Standard library only (`context`, `log/slog`, `sync`, `time`).
+Dual sliding-window per-IP + per-account authentication brute-force rate limiter (OWASP ASVS 2.2.1). Standard library only (`context`, `log/slog`, `sync`, `time`). The two dimension keys are distinct types (`ratelimit.ClientIP`, `ratelimit.Username`) so they cannot be transposed silently.
 
 ```go
-rl := ratelimit.NewRateLimiter(ctx, ratelimit.DefaultConfig())
-defer rl.Stop()
-if allowed, retryAfter := rl.Allow(clientIP, username); !allowed {
+rl := ratelimit.New(ctx, ratelimit.DefaultConfig())
+defer func() {
+    // Bound the wait so a wedged prune goroutine surfaces as an error
+    // instead of hanging process shutdown.
+    sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    if err := rl.Shutdown(sctx); err != nil {
+        log.Printf("ratelimit shutdown: %v", err)
+    }
+}()
+ip, user := ratelimit.ClientIP(clientIP), ratelimit.Username(username)
+if allowed, retryAfter := rl.Allow(ip, user); !allowed {
     // reject; retry after retryAfter
 }
 // On each FAILED login attempt, record it so it counts toward the limit:
-rl.Record(clientIP, username)
+rl.Record(ip, user)
 // On successful login, clear the failure counters:
-rl.Reset(clientIP, username)
+rl.Reset(ip, user)
 ```
 
 ### `auth/authtest`

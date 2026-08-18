@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -23,11 +24,11 @@ func FuzzRateLimiterAllow(f *testing.F) {
 			PruneInterval: time.Hour, // don't prune during test
 			MaxEntries:    100,
 		}
-		rl := NewRateLimiter(t.Context(), cfg)
-		defer rl.Stop()
+		rl := New(t.Context(), cfg)
+		defer rl.Shutdown(context.Background())
 
 		// Freeze the clock so the 1s windows cannot elapse between the Record
-		// calls and the Allow check. With the real clock (NewRateLimiter
+		// calls and the Allow check. With the real clock (New
 		// defaults nowFunc to time.Now), a slow runner or GC pause can push
 		// Allow past the window, age the recorded attempts out, and flake the
 		// "blocked after limit" assertion.
@@ -36,7 +37,7 @@ func FuzzRateLimiterAllow(f *testing.F) {
 
 		// Record up to limit
 		for range cfg.IPLimit {
-			rl.Record(ip, username)
+			rl.Record(ClientIP(ip), Username(username))
 		}
 
 		// After the limit is reached, Allow must return false -- but only when at
@@ -44,7 +45,7 @@ func FuzzRateLimiterAllow(f *testing.F) {
 		// username are both skipped (a missing key carries no per-client signal),
 		// so nothing is recorded and Allow always allows; that is the intended
 		// empty-key behavior, not a limit breach.
-		allowed, _ := rl.Allow(ip, username)
+		allowed, _ := rl.Allow(ClientIP(ip), Username(username))
 		if (ip != "" || username != "") && allowed {
 			t.Fatal("Allow returned true after limit reached")
 		}

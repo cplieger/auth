@@ -1,4 +1,4 @@
-module github.com/cplieger/auth/v3
+module github.com/cplieger/auth/v4
 
 go 1.26.7
 

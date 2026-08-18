@@ -7,10 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cplieger/auth/v3"
+	"github.com/cplieger/auth/v4"
 )
 
 // MemStore is an in-memory implementation of auth interfaces for testing.
+// A MemStore must be constructed with [NewMemStore]: the zero value has nil
+// maps and panics on the first Add/Create call.
 type MemStore struct {
 	users    map[int64]*auth.User
 	sessions map[string]*auth.Session

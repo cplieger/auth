@@ -77,6 +77,33 @@ type PasskeyFlags struct {
 	CloneWarning   bool
 }
 
+// PasskeyRef identifies one passkey credential together with the user who
+// must own it. Rename/delete operations take the pair as one value so the
+// ownership check cannot be silently disarmed by swapping two adjacent int64
+// arguments: the field names make each value's role explicit at the call site.
+// The zero value identifies nothing: no stored credential has ID or UserID
+// zero, so an operation given a zero or partial ref affects no row (fails
+// closed).
+type PasskeyRef struct {
+	// ID is the credential row ID (PasskeyCredential.ID).
+	ID int64
+	// UserID is the owning user; an operation must affect the credential only
+	// when it belongs to this user.
+	UserID int64
+}
+
+// KeyRef identifies one API key together with the user who must own it.
+// See [PasskeyRef] for why the pair travels as one value. The zero value
+// identifies nothing: no stored key has ID or UserID zero, so an operation
+// given a zero or partial ref affects no row (fails closed).
+type KeyRef struct {
+	// ID is the key row ID (Key.ID).
+	ID int64
+	// UserID is the owning user; an operation must affect the key only when
+	// it belongs to this user.
+	UserID int64
+}
+
 // Key represents a machine-to-machine API key for a user.
 type Key struct {
 	CreatedAt time.Time  `json:"created_at"`

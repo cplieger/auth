@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cplieger/auth/v3"
+	"github.com/cplieger/auth/v4"
 	"golang.org/x/oauth2"
 	"pgregory.net/rapid"
 )
@@ -98,8 +98,8 @@ func TestUsernameFromClaims(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("usernameFromClaims error = %v, wantErr=%v", err, tc.wantErr)
 			}
-			if tc.wantErr && !errors.Is(err, ErrOIDCNoUsername) {
-				t.Errorf("error %v does not wrap ErrOIDCNoUsername", err)
+			if tc.wantErr && !errors.Is(err, ErrNoUsername) {
+				t.Errorf("error %v does not wrap ErrNoUsername", err)
 			}
 			if got != tc.want {
 				t.Errorf("usernameFromClaims = %q, want %q", got, tc.want)
@@ -112,8 +112,8 @@ func TestResolveUser_rejects_token_without_username_or_email(t *testing.T) {
 	t.Parallel()
 	claims := &Claims{Subject: "sub-123", Issuer: "https://idp.example.com"}
 	user, isNew, err := ResolveUser(claims, nil)
-	if !errors.Is(err, ErrOIDCNoUsername) {
-		t.Fatalf("ResolveUser error = %v, want ErrOIDCNoUsername", err)
+	if !errors.Is(err, ErrNoUsername) {
+		t.Fatalf("ResolveUser error = %v, want ErrNoUsername", err)
 	}
 	if user != nil || isNew {
 		t.Errorf("ResolveUser = (%+v, isNew=%v), want (nil, false) on rejected provisioning", user, isNew)
@@ -131,7 +131,7 @@ func TestProperty_PKCERoundTrip(t *testing.T) {
 			t.Fatal("empty verifier or challenge")
 		}
 		h := sha256.Sum256([]byte(verifier))
-		expected := base64.RawURLEncoding.EncodeToString(h[:])
+		expected := CodeChallenge(base64.RawURLEncoding.EncodeToString(h[:]))
 		if challenge != expected {
 			t.Fatalf("challenge mismatch")
 		}
@@ -142,7 +142,7 @@ func TestProperty_StateGeneration(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(t *rapid.T) {
 		n := rapid.IntRange(2, 20).Draw(t, "n")
-		states := make(map[string]struct{}, n)
+		states := make(map[State]struct{}, n)
 		for i := range n {
 			state, err := GenerateState()
 			if err != nil {
@@ -199,7 +199,10 @@ func TestAuthorizationURL_includes_pkce_and_state(t *testing.T) {
 		},
 	}
 
-	raw := p.AuthorizationURL("state-xyz", "nonce-abc", "challenge-123")
+	raw, err := p.AuthorizationURL("state-xyz", "nonce-abc", "challenge-123")
+	if err != nil {
+		t.Fatalf("AuthorizationURL error: %v", err)
+	}
 
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -218,6 +221,44 @@ func TestAuthorizationURL_includes_pkce_and_state(t *testing.T) {
 	}
 	if got := q.Get("code_challenge_method"); got != "S256" {
 		t.Errorf("code_challenge_method = %q, want S256 (PKCE)", got)
+	}
+}
+
+// AuthorizationURL fails closed on an empty state or code challenge, mirroring
+// Exchange's empty-nonce posture: an empty state would emit an authorization
+// request with no CSRF binding, an empty challenge one with no PKCE
+// protection, and both would otherwise be silent.
+func TestAuthorizationURL_rejects_empty_state_and_challenge(t *testing.T) {
+	t.Parallel()
+
+	p := &Provider{
+		oauth2: oauth2.Config{
+			ClientID:    "test-client",
+			RedirectURL: "https://app.example.com/callback",
+			Endpoint:    oauth2.Endpoint{AuthURL: "https://idp.example.com/authorize"},
+		},
+	}
+
+	cases := []struct {
+		name          string
+		state         State
+		codeChallenge CodeChallenge
+		wantInErr     string
+	}{
+		{"empty state", "", "challenge-123", "empty state"},
+		{"empty code challenge", "state-xyz", "", "empty code challenge"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			raw, err := p.AuthorizationURL(tc.state, "nonce-abc", tc.codeChallenge)
+			if err == nil {
+				t.Fatalf("AuthorizationURL(%q, _, %q) = %q, nil; want error (fail closed)", tc.state, tc.codeChallenge, raw)
+			}
+			if !strings.Contains(err.Error(), tc.wantInErr) {
+				t.Errorf("error = %q, want containing %q", err, tc.wantInErr)
+			}
+		})
 	}
 }
 
@@ -247,8 +288,8 @@ func TestCheckAuthorizedParty(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("checkAuthorizedParty(%v, %q, %q) error = %v, wantErr=%v", tc.audiences, tc.azp, clientID, err, tc.wantErr)
 			}
-			if err != nil && !errors.Is(err, ErrOIDCTokenInvalid) {
-				t.Errorf("checkAuthorizedParty error %v does not wrap ErrOIDCTokenInvalid", err)
+			if err != nil && !errors.Is(err, ErrTokenInvalid) {
+				t.Errorf("checkAuthorizedParty error %v does not wrap ErrTokenInvalid", err)
 			}
 		})
 	}
@@ -275,8 +316,8 @@ func TestCheckNonce(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("checkNonce(%q, %q) error = %v, wantErr=%v", tc.expected, tc.got, err, tc.wantErr)
 			}
-			if err != nil && !errors.Is(err, ErrOIDCNonceMismatch) {
-				t.Errorf("checkNonce error %v does not wrap ErrOIDCNonceMismatch", err)
+			if err != nil && !errors.Is(err, ErrNonceMismatch) {
+				t.Errorf("checkNonce error %v does not wrap ErrNonceMismatch", err)
 			}
 		})
 	}

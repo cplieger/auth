@@ -39,20 +39,21 @@ needs an explicit `sec:` rationale in the commit body.
 
 ## Package map
 
-The root package holds the primitives; subpackages are independently
-importable.
+The root package holds the primitives and the persistence-SPI role
+interfaces (`UserStore`, `SessionPersister`, `PasskeyStore`, `KeyStore`,
+`OIDCStateStore`) the consumer's storage layer implements; subpackages are
+independently importable.
 
 | Path                          | Purpose                                                                                                                                                                     |
 |-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `github.com/cplieger/auth/v2` | Passwords, sessions, tokens, cookies, API keys, WebAuthn/OIDC entry points, middleware/guards (`Authenticator`, `SessionVerifier`, `APIKeyVerifier`, `CredentialVerifier`). |
-| `auth/store`                  | `store.Composite` interface (user/session/passkey/key/OIDC-state) for the consumer's persistence layer.                                                                     |
+| `github.com/cplieger/auth/v4` | Passwords, sessions, tokens, cookies, API keys, WebAuthn/OIDC entry points, middleware/guards (`Authenticator`, `SessionVerifier`, `APIKeyVerifier`, `CredentialVerifier`). |
 | `auth/ratelimit`              | Dual sliding-window per-IP + per-account brute-force limiter (OWASP ASVS 2.2.1). Stdlib-only.                                                                               |
 | `auth/oidc`                   | OIDC provider config validation and helpers.                                                                                                                                |
 | `auth/webauthn`               | WebAuthn/FIDO2 helpers (e.g. AAGUID formatting).                                                                                                                            |
 | `auth/authtest`               | Exported in-memory `SessionStore`/`AuthStore` (`NewMemStore`, `AddUser`) for consumer tests. Not for production.                                                            |
 
 Storage is injected by the consumer: the library defines interfaces
-(`SessionStore`, `store.Composite`, `CredentialVerifier`) and never
+(`SessionStore`, the role interfaces above, `CredentialVerifier`) and never
 ships a concrete persistence implementation. Configuration is via
 functional options only: no env reads, no global init, no import-time
 side effects.
@@ -119,7 +120,7 @@ go test -run '^$' -fuzz '^FuzzOIDCValidateConfig$' -fuzztime 30s ./oidc
 go test -run '^$' -fuzz '^FuzzFormatAAGUID$' -fuzztime 30s ./webauthn
 ```
 
-Other root targets include `FuzzValidatePasswordLength`,
+Other root targets include `FuzzPasswordLengthValidation`,
 `FuzzValidatePasswordContext`, `FuzzCSRFTokenRoundTrip`, and
 `FuzzValidateCookieField`. `go test` only
 runs one `-fuzz` target per package per invocation; the corpus replays as

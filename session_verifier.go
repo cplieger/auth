@@ -75,12 +75,12 @@ func (v *SessionVerifier) Verify(ctx context.Context, r *http.Request) (*User, s
 	// Timeouts are resolved per verification so a WithTimeoutSource consumer's
 	// hot-reloaded values take effect immediately; without a source this is
 	// exactly the static configured pair.
-	idle, abs := v.cfg.resolveTimeouts()
-	if verr := ValidateSession(sess, idle, abs, now); verr != nil {
+	ts := v.cfg.resolveTimeouts()
+	if verr := ValidateSession(sess, ts, now); verr != nil {
 		v.logger().Debug("auth: session rejected", "user_id", sess.UserID, "reason", verr)
 		return nil, "", nil
 	}
-	if v.shouldWriteActivity(hash, now, idle) {
+	if v.shouldWriteActivity(hash, now, ts.Idle) {
 		if actErr := v.store.UpdateSessionActivity(ctx, hash, now); actErr != nil {
 			v.logger().Warn("auth: session activity update failed", "error", actErr)
 		}

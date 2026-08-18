@@ -254,7 +254,7 @@ func (c *CookieConfig) ReadCookie(r *http.Request) string {
 //     Path, breaking every session with no server-side error.
 //
 // Validate is the single authority for cookie-config validity: the
-// constructors ([NewAuthenticator], [NewSessionVerifier]) call it so an
+// constructors ([New], [NewSessionVerifier]) call it so an
 // unusable configuration fails fast at construction, and consumers assembling a
 // CookieConfig by hand may call it directly.
 func (c *CookieConfig) Validate() error {

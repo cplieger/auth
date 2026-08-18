@@ -8,12 +8,8 @@ import (
 // --- Session storage (role-split per OWASP ASVS L2 §3.3.3/3.3.4) ---
 //
 // Every by-key lookup below reports absence through a `found` result rather
-// than a nil value with a nil error. Absence is a normal answer and does not
-// travel as an error, but it must be impossible to overlook: a caller cannot
-// reach the value without also receiving `found`, which is the shape the
-// language already uses for a map lookup. The narrow interfaces here and the
-// composite in auth/store declare the same contract; both are the surface a
-// consumer reads before implementing.
+// than a nil value with a nil error; the full contract, shared with the role
+// interfaces of the persistence SPI, is documented once in store_contract.go.
 
 // SessionReader finds session data by token hash.
 type SessionReader interface {
