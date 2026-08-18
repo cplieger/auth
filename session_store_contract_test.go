@@ -7,8 +7,8 @@ import (
 	"pgregory.net/rapid"
 )
 
-// AuthStoreContractSuite runs behavioral cases against any AuthStore.
-func AuthStoreContractSuite(t *testing.T, newStore func(t *testing.T) AuthStore) {
+// AuthenticatorStoreContractSuite runs behavioral cases against any AuthenticatorStore.
+func AuthenticatorStoreContractSuite(t *testing.T, newStore func(t *testing.T) AuthenticatorStore) {
 	t.Helper()
 
 	t.Run("GetSessionByHash_missing_reports_not_found", func(t *testing.T) {
@@ -58,14 +58,14 @@ func AuthStoreContractSuite(t *testing.T, newStore func(t *testing.T) AuthStore)
 }
 
 // SessionStoreContractSuite is an alias for backward compatibility.
-var SessionStoreContractSuite = AuthStoreContractSuite
+var SessionStoreContractSuite = AuthenticatorStoreContractSuite
 
 // SessionStoreContractTest is an alias for backward compatibility.
-var SessionStoreContractTest = AuthStoreContractSuite
+var SessionStoreContractTest = AuthenticatorStoreContractSuite
 
 func TestFakeSessionStore_contract(t *testing.T) {
 	t.Parallel()
-	AuthStoreContractSuite(t, func(_ *testing.T) AuthStore {
+	AuthenticatorStoreContractSuite(t, func(_ *testing.T) AuthenticatorStore {
 		return newFakeSessionStore()
 	})
 }

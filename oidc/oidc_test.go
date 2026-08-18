@@ -322,3 +322,30 @@ func TestCheckNonce(t *testing.T) {
 		})
 	}
 }
+
+
+// TestZeroProviderExchangeFailsBeforeTheNilVerifier pins the zero-value
+// contract stated on [Provider]: a zero Provider has no discovered endpoints
+// and no verifier, and Exchange must report the unreachable token endpoint as
+// ErrExchange rather than nil-dereferencing the verifier. The doc comment
+// claimed a panic here until this test was written; that claim was wrong
+// because the token request runs first.
+func TestZeroProviderExchangeFailsBeforeTheNilVerifier(t *testing.T) {
+	t.Parallel()
+
+	var p Provider
+	if p.verifier != nil {
+		t.Fatalf("zero Provider verifier = %v, want nil (the premise of this test)", p.verifier)
+	}
+
+	claims, expiry, err := p.Exchange(t.Context(), "code-abc", "verifier-xyz", "nonce-123")
+	if err == nil {
+		t.Fatalf("zero Provider Exchange = %+v, %v, nil; want ErrExchange", claims, expiry)
+	}
+	if !errors.Is(err, ErrExchange) {
+		t.Errorf("zero Provider Exchange err = %v, want errors.Is(err, ErrExchange): the empty token endpoint is what fails, not the verifier", err)
+	}
+	if claims != nil || expiry != nil {
+		t.Errorf("zero Provider Exchange = %+v, %v; want nil, nil alongside the error", claims, expiry)
+	}
+}

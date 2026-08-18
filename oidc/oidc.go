@@ -76,8 +76,10 @@ type Code string
 type CodeVerifier = auth.OIDCCodeVerifier
 
 // Provider wraps the coreos/go-oidc provider with PKCE support. Create with
-// [NewProvider]; the zero value has no discovered endpoints or token verifier
-// (Exchange panics on the nil verifier).
+// [NewProvider]; the zero value has no discovered endpoints and no token
+// verifier, so [Provider.Exchange] fails at the token request — the empty
+// token endpoint URL is unreachable, reported as [ErrExchange] — and returns
+// before the nil verifier is ever consulted.
 type Provider struct {
 	provider *gooidc.Provider
 	verifier *gooidc.IDTokenVerifier

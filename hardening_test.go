@@ -229,9 +229,9 @@ func TestRoleInterface_APIKeyReader(t *testing.T) {
 	var _ APIKeyReader = newFakeSessionStore()
 }
 
-func TestRoleInterface_AuthStore(t *testing.T) {
+func TestRoleInterface_AuthenticatorStore(t *testing.T) {
 	t.Parallel()
-	var _ AuthStore = newFakeSessionStore()
+	var _ AuthenticatorStore = newFakeSessionStore()
 }
 
 func TestRoleInterface_SessionVerifierStore(t *testing.T) {
