@@ -323,7 +323,6 @@ func TestCheckNonce(t *testing.T) {
 	}
 }
 
-
 // TestZeroProviderExchangeFailsBeforeTheNilVerifier pins the zero-value
 // contract stated on [Provider]: a zero Provider has no discovered endpoints
 // and no verifier, and Exchange must report the unreachable token endpoint as
