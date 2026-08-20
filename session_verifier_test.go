@@ -275,7 +275,7 @@ func TestSessionVerifier_updates_activity(t *testing.T) {
 	}
 
 	// Check that LastActivity was updated
-	sess, _, _ := db.GetSessionByHash(ctx, hash)
+	sess, _, _ := db.SessionByHash(ctx, hash)
 	if sess.LastActivity.Equal(created) {
 		t.Error("LastActivity was not updated after Verify")
 	}
@@ -293,11 +293,11 @@ type failingSessionStore struct {
 	userErr error
 }
 
-func (s *failingSessionStore) GetSessionByHash(context.Context, string) (*Session, bool, error) {
+func (s *failingSessionStore) SessionByHash(context.Context, string) (*Session, bool, error) {
 	return s.sess, s.sess != nil, s.sessErr
 }
 
-func (s *failingSessionStore) GetUserByID(context.Context, int64) (*User, bool, error) {
+func (s *failingSessionStore) UserByID(context.Context, int64) (*User, bool, error) {
 	return s.user, s.user != nil, s.userErr
 }
 
@@ -341,11 +341,11 @@ type activityErrStore struct {
 	user *User
 }
 
-func (s activityErrStore) GetSessionByHash(context.Context, string) (*Session, bool, error) {
+func (s activityErrStore) SessionByHash(context.Context, string) (*Session, bool, error) {
 	return s.sess, s.sess != nil, nil
 }
 
-func (s activityErrStore) GetUserByID(context.Context, int64) (*User, bool, error) {
+func (s activityErrStore) UserByID(context.Context, int64) (*User, bool, error) {
 	return s.user, s.user != nil, nil
 }
 

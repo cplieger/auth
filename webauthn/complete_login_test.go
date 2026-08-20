@@ -31,7 +31,7 @@ type fakeStore struct {
 	updated   *custodyRecord
 }
 
-func (f *fakeStore) GetUserByID(_ context.Context, id int64) (*auth.User, bool, error) {
+func (f *fakeStore) UserByID(_ context.Context, id int64) (*auth.User, bool, error) {
 	if f.userErr != nil {
 		return nil, false, f.userErr
 	}
@@ -39,7 +39,7 @@ func (f *fakeStore) GetUserByID(_ context.Context, id int64) (*auth.User, bool, 
 	return u, ok, nil
 }
 
-func (f *fakeStore) GetPasskeysByUserID(_ context.Context, userID int64) ([]auth.PasskeyCredential, error) {
+func (f *fakeStore) PasskeysByUserID(_ context.Context, userID int64) ([]auth.PasskeyCredential, error) {
 	if f.credsErr != nil {
 		return nil, f.credsErr
 	}

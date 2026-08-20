@@ -13,7 +13,7 @@ import (
 
 // SessionReader finds session data by token hash.
 type SessionReader interface {
-	GetSessionByHash(ctx context.Context, tokenHash string) (sess *Session, found bool, err error)
+	SessionByHash(ctx context.Context, tokenHash string) (sess *Session, found bool, err error)
 }
 
 // SessionWriter persists and removes session data.
@@ -39,12 +39,12 @@ type SessionStore interface {
 
 // UserReader retrieves user records for authentication.
 type UserReader interface {
-	GetUserByID(ctx context.Context, id int64) (user *User, found bool, err error)
+	UserByID(ctx context.Context, id int64) (user *User, found bool, err error)
 }
 
 // --- API Key storage ---
 
 // APIKeyReader validates API keys (looked up by hash).
 type APIKeyReader interface {
-	GetAPIKeyByHash(ctx context.Context, hash string) (key *Key, found bool, err error)
+	APIKeyByHash(ctx context.Context, hash string) (key *Key, found bool, err error)
 }

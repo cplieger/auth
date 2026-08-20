@@ -10,7 +10,7 @@ type fakeAPIKeyStore struct {
 	key *Key
 }
 
-func (s *fakeAPIKeyStore) GetAPIKeyByHash(_ context.Context, hash string) (*Key, bool, error) {
+func (s *fakeAPIKeyStore) APIKeyByHash(_ context.Context, hash string) (*Key, bool, error) {
 	if s.key != nil && s.key.KeyHash == hash {
 		return s.key, true, nil
 	}

@@ -31,9 +31,9 @@ func NewMemStore() *MemStore {
 	}
 }
 
-// GetSessionByHash returns the session stored under tokenHash. found is false
+// SessionByHash returns the session stored under tokenHash. found is false
 // when no such session exists; err is always nil.
-func (m *MemStore) GetSessionByHash(_ context.Context, tokenHash string) (sess *auth.Session, found bool, err error) {
+func (m *MemStore) SessionByHash(_ context.Context, tokenHash string) (sess *auth.Session, found bool, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, ok := m.sessions[tokenHash]
@@ -44,9 +44,9 @@ func (m *MemStore) GetSessionByHash(_ context.Context, tokenHash string) (sess *
 	return &cp, true, nil
 }
 
-// GetUserByID returns the user with the given id. found is false when the user
+// UserByID returns the user with the given id. found is false when the user
 // is absent; err is always nil.
-func (m *MemStore) GetUserByID(_ context.Context, id int64) (user *auth.User, found bool, err error) {
+func (m *MemStore) UserByID(_ context.Context, id int64) (user *auth.User, found bool, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	u, ok := m.users[id]
@@ -57,9 +57,9 @@ func (m *MemStore) GetUserByID(_ context.Context, id int64) (user *auth.User, fo
 	return &cp, true, nil
 }
 
-// GetAPIKeyByHash returns the API key stored under hash. found is false when
+// APIKeyByHash returns the API key stored under hash. found is false when
 // the key is absent; err is always nil.
-func (m *MemStore) GetAPIKeyByHash(_ context.Context, hash string) (key *auth.Key, found bool, err error) {
+func (m *MemStore) APIKeyByHash(_ context.Context, hash string) (key *auth.Key, found bool, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	k, ok := m.apiKeys[hash]

@@ -26,7 +26,7 @@ func newFakeSessionStore() *fakeSessionStore {
 	}
 }
 
-func (f *fakeSessionStore) GetSessionByHash(_ context.Context, tokenHash string) (*Session, bool, error) {
+func (f *fakeSessionStore) SessionByHash(_ context.Context, tokenHash string) (*Session, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.sessions[tokenHash]
@@ -36,7 +36,7 @@ func (f *fakeSessionStore) GetSessionByHash(_ context.Context, tokenHash string)
 	return s, true, nil
 }
 
-func (f *fakeSessionStore) GetUserByID(_ context.Context, id int64) (*User, bool, error) {
+func (f *fakeSessionStore) UserByID(_ context.Context, id int64) (*User, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	u, ok := f.users[id]
@@ -46,7 +46,7 @@ func (f *fakeSessionStore) GetUserByID(_ context.Context, id int64) (*User, bool
 	return u, true, nil
 }
 
-func (f *fakeSessionStore) GetAPIKeyByHash(_ context.Context, hash string) (*Key, bool, error) {
+func (f *fakeSessionStore) APIKeyByHash(_ context.Context, hash string) (*Key, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	k, ok := f.apiKeys[hash]
@@ -139,7 +139,7 @@ func (f *fakeSessionStore) CreatePasskey(_ context.Context, c *PasskeyCredential
 	return nil
 }
 
-func (f *fakeSessionStore) GetPasskeyByCredentialID(_ context.Context, credID []byte) (*PasskeyCredential, error) {
+func (f *fakeSessionStore) PasskeyByCredentialID(_ context.Context, credID []byte) (*PasskeyCredential, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for i := range f.passkeys {

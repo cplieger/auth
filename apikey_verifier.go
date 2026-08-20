@@ -59,7 +59,7 @@ func (v *APIKeyVerifier) Verify(ctx context.Context, r *http.Request) (*User, st
 		}
 		return nil, "", err
 	}
-	user, found, err := v.store.GetUserByID(ctx, apiKey.UserID)
+	user, found, err := v.store.UserByID(ctx, apiKey.UserID)
 	if err != nil {
 		return nil, "", err
 	}

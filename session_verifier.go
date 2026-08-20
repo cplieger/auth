@@ -63,7 +63,7 @@ func (v *SessionVerifier) Verify(ctx context.Context, r *http.Request) (*User, s
 		return nil, "", nil
 	}
 	hash := SessionHash(token)
-	sess, found, err := v.store.GetSessionByHash(ctx, hash)
+	sess, found, err := v.store.SessionByHash(ctx, hash)
 	if err != nil {
 		v.logger().Warn("auth: session lookup failed", "error", err)
 		return nil, "", nil
@@ -85,7 +85,7 @@ func (v *SessionVerifier) Verify(ctx context.Context, r *http.Request) (*User, s
 			v.logger().Warn("auth: session activity update failed", "error", actErr)
 		}
 	}
-	user, found, err := v.store.GetUserByID(ctx, sess.UserID)
+	user, found, err := v.store.UserByID(ctx, sess.UserID)
 	if err != nil {
 		v.logger().Warn("auth: user lookup failed", "user_id", sess.UserID, "error", err)
 		return nil, "", nil
