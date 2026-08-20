@@ -13,12 +13,12 @@ import (
 // how many times it was invoked.
 type stubVerifier struct {
 	user   *User
-	called *int32
+	called *atomic.Int32
 	hash   string
 }
 
 func (s *stubVerifier) Verify(_ context.Context, _ *http.Request) (*User, string, error) {
-	atomic.AddInt32(s.called, 1)
+	s.called.Add(1)
 	return s.user, s.hash, nil
 }
 
@@ -28,7 +28,7 @@ func TestAuthenticator_WithVerifiers_ResolvesThroughInjected(t *testing.T) {
 	t.Parallel()
 	db := newFakeSessionStore()
 	want := &User{ID: 42, Username: "custom", Role: RoleUser, Enabled: true}
-	var called int32
+	var called atomic.Int32
 
 	a := mustAuthenticator(t, db, WithVerifiers([]CredentialVerifier{
 		&stubVerifier{user: want, hash: "custom-hash", called: &called},
@@ -45,7 +45,7 @@ func TestAuthenticator_WithVerifiers_ResolvesThroughInjected(t *testing.T) {
 	if hash != "custom-hash" {
 		t.Fatalf("hash = %q, want custom-hash", hash)
 	}
-	if n := atomic.LoadInt32(&called); n != 1 {
+	if n := called.Load(); n != 1 {
 		t.Fatalf("injected verifier called %d times, want 1", n)
 	}
 }
