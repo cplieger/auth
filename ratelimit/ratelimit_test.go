@@ -442,22 +442,18 @@ func TestRateLimiter_prune_concurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	for i := range 4 {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
+	for id := range 4 {
+		wg.Go(func() {
 			ip := ClientIP(fmt.Sprintf("10.0.%d.1", id))
 			user := Username(fmt.Sprintf("user-%d", id))
 			for range 200 {
 				rl.Record(ip, user)
 			}
-		}(i)
+		})
 	}
 
-	for i := range 2 {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
+	for id := range 2 {
+		wg.Go(func() {
 			ip := ClientIP(fmt.Sprintf("10.0.%d.1", id))
 			user := Username(fmt.Sprintf("user-%d", id))
 			for range 200 {
@@ -466,7 +462,7 @@ func TestRateLimiter_prune_concurrent(t *testing.T) {
 					t.Errorf("Allow returned blocked with non-positive retryAfter")
 				}
 			}
-		}(i)
+		})
 	}
 
 	wg.Go(func() {
@@ -858,8 +854,7 @@ func TestRateLimiter_pruneLoop_prunes_stale_on_tick(t *testing.T) {
 
 		rl.Record("10.0.0.1", "alice")
 
-		time.Sleep(2 * cfg.PruneInterval)
-		synctest.Wait()
+		synctest.Sleep(2 * cfg.PruneInterval)
 
 		rl.muIP.Lock()
 		ipN := len(rl.ipWindows)

@@ -131,7 +131,7 @@ func TestSessionVerifier_Throttle_WritesAgainAfterWindow(t *testing.T) {
 			t.Fatalf("within window: writes = %d, want 1", got)
 		}
 
-		time.Sleep(30 * time.Millisecond) // virtual time: advances instantly inside the bubble
+		synctest.Sleep(30 * time.Millisecond) // virtual time: advances instantly inside the bubble
 		if _, _, err := v.Verify(ctx, r); err != nil {
 			t.Fatalf("Verify error: %v", err)
 		}
@@ -154,15 +154,13 @@ func TestSessionVerifier_Throttle_ConcurrentSafe(t *testing.T) {
 
 	const goroutines = 50
 	var wg sync.WaitGroup
-	wg.Add(goroutines)
 	for range goroutines {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			r := throttleRequest(plaintext)
 			if _, _, err := v.Verify(ctx, r); err != nil {
 				t.Errorf("Verify error: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
