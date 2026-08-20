@@ -36,8 +36,8 @@ func BenchmarkAuthenticate(b *testing.B) {
 	b.Run("session_cookie", func(b *testing.B) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/test", nil)
 		req.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: token})
-		b.ResetTimer()
-		for range b.N {
+		b.ReportAllocs()
+		for b.Loop() {
 			_, _, _ = auth.Authenticate(req)
 		}
 	})
@@ -45,16 +45,16 @@ func BenchmarkAuthenticate(b *testing.B) {
 	b.Run("api_key_header", func(b *testing.B) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/test", nil)
 		req.Header.Set(HeaderXAPIKey, apiKeyRaw)
-		b.ResetTimer()
-		for range b.N {
+		b.ReportAllocs()
+		for b.Loop() {
 			_, _, _ = auth.Authenticate(req)
 		}
 	})
 
 	b.Run("no_credentials", func(b *testing.B) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/test", nil)
-		b.ResetTimer()
-		for range b.N {
+		b.ReportAllocs()
+		for b.Loop() {
 			_, _, _ = auth.Authenticate(req)
 		}
 	})

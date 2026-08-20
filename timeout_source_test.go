@@ -138,7 +138,7 @@ func TestSessionVerifier_TimeoutSource_ClampsThrottleToHalfIdle(t *testing.T) {
 		// second write here is only possible if the clamp took effect. The
 		// session stays valid: write 1 refreshed LastActivity, and 60ms is
 		// within the 100ms resolved idle.
-		time.Sleep(60 * time.Millisecond) // virtual time inside the bubble
+		synctest.Sleep(60 * time.Millisecond) // virtual time inside the bubble
 		if _, _, err := v.Verify(ctx, r); err != nil {
 			t.Fatalf("Verify error: %v", err)
 		}
