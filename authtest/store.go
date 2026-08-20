@@ -1,5 +1,13 @@
 // Package authtest provides an in-memory implementation of [auth.AuthenticatorStore]
 // for use in consumer tests. It is not intended for production use.
+//
+// Every read returns a fresh copy and every write stores a fresh copy, so a
+// consumer test can mutate what it receives without reaching the store's state
+// and vice versa. That isolation is what [TestMemStoreIsolatesStoredValues]
+// pins: it holds today because [auth.User], [auth.Session] and [auth.Key]
+// contain no pointer, slice or map field, so a struct copy is a complete one.
+// A reference-typed field added to any of the three would silently break it,
+// which is why the guarantee is asserted rather than assumed.
 package authtest
 
 import (
@@ -31,8 +39,8 @@ func NewMemStore() *MemStore {
 	}
 }
 
-// SessionByHash returns the session stored under tokenHash. found is false
-// when no such session exists; err is always nil.
+// SessionByHash returns a copy of the session stored under tokenHash. found is
+// false when no such session exists; err is always nil.
 func (m *MemStore) SessionByHash(_ context.Context, tokenHash string) (sess *auth.Session, found bool, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -40,12 +48,11 @@ func (m *MemStore) SessionByHash(_ context.Context, tokenHash string) (sess *aut
 	if !ok {
 		return nil, false, nil
 	}
-	cp := *s
-	return &cp, true, nil
+	return new(*s), true, nil
 }
 
-// UserByID returns the user with the given id. found is false when the user
-// is absent; err is always nil.
+// UserByID returns a copy of the user with the given id. found is false when
+// the user is absent; err is always nil.
 func (m *MemStore) UserByID(_ context.Context, id int64) (user *auth.User, found bool, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -53,12 +60,11 @@ func (m *MemStore) UserByID(_ context.Context, id int64) (user *auth.User, found
 	if !ok {
 		return nil, false, nil
 	}
-	cp := *u
-	return &cp, true, nil
+	return new(*u), true, nil
 }
 
-// APIKeyByHash returns the API key stored under hash. found is false when
-// the key is absent; err is always nil.
+// APIKeyByHash returns a copy of the API key stored under hash. found is false
+// when the key is absent; err is always nil.
 func (m *MemStore) APIKeyByHash(_ context.Context, hash string) (key *auth.Key, found bool, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -66,8 +72,7 @@ func (m *MemStore) APIKeyByHash(_ context.Context, hash string) (key *auth.Key, 
 	if !ok {
 		return nil, false, nil
 	}
-	cp := *k
-	return &cp, true, nil
+	return new(*k), true, nil
 }
 
 // UpdateSessionActivity sets LastActivity to now for the session identified by
@@ -85,8 +90,7 @@ func (m *MemStore) UpdateSessionActivity(_ context.Context, tokenHash string, no
 func (m *MemStore) CreateSession(_ context.Context, s *auth.Session) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	cp := *s
-	m.sessions[cp.TokenHash] = &cp
+	m.sessions[s.TokenHash] = new(*s)
 	return nil
 }
 
@@ -111,25 +115,27 @@ func (m *MemStore) DeleteUserSessions(_ context.Context, userID int64, exceptHas
 	return nil
 }
 
-// AddUser adds a user to the store and assigns an auto-incremented ID.
+// AddUser stores a copy of u and assigns it an auto-incremented ID, which it
+// also writes back to u so the caller knows the ID its user was given.
 func (m *MemStore) AddUser(u *auth.User) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	u.ID = m.nextID
 	m.nextID++
-	cp := *u
-	m.users[cp.ID] = &cp
+	m.users[u.ID] = new(*u)
 }
 
-// AddSession adds a session to the store.
+// AddSession stores a copy of s, keyed by its TokenHash.
 func (m *MemStore) AddSession(s *auth.Session) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	cp := *s
-	m.sessions[cp.TokenHash] = &cp
+	m.sessions[s.TokenHash] = new(*s)
 }
 
-// AddAPIKey adds an API key to the store.
+// AddAPIKey stores a copy of k, keyed by its KeyHash, assigning an
+// auto-incremented ID when k carries none. Unlike [MemStore.AddUser] it does
+// not write the ID back: k.ID == 0 is how a caller asks for one, so writing it
+// back would change the meaning of a second Add of the same value.
 func (m *MemStore) AddAPIKey(k *auth.Key) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -44,7 +44,7 @@ func VerifyAPIKey(ctx context.Context, store APIKeyReader, key string) (*Key, er
 	if subtle.ConstantTimeCompare([]byte(hash), []byte(apiKey.KeyHash)) != 1 {
 		return nil, ErrInvalidAPIKey
 	}
-	if apiKey.ExpiresAt != nil && time.Now().After(*apiKey.ExpiresAt) {
+	if !apiKey.ExpiresAt.IsZero() && time.Now().After(apiKey.ExpiresAt) {
 		return nil, ErrInvalidAPIKey
 	}
 	return apiKey, nil

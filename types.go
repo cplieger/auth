@@ -39,13 +39,20 @@ type User struct {
 
 // Session represents a server-side authenticated session.
 type Session struct {
-	CreatedAt    time.Time  `json:"created_at"`
-	LastActivity time.Time  `json:"last_activity"`
-	OIDCExpiry   *time.Time `json:"oidc_expiry,omitempty"`
-	TokenHash    string     `json:"-"`
-	AuthMethod   Method     `json:"auth_method"`
-	IPAddress    string     `json:"ip_address"`
-	UserID       int64      `json:"user_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	LastActivity time.Time `json:"last_activity"`
+	// OIDCExpiry is the underlying OIDC token's expiry, or the zero Time when
+	// the session is not OIDC-backed or the provider issued no expiry. It is a
+	// value, not a *time.Time: time.Time's zero value already encodes absence
+	// (see [time.Time.IsZero]), so the pointer bought nothing and cost two
+	// things — a nil dereference for any caller that read it without the nil
+	// check, and a shared mutable cell, since a struct copy of a Session
+	// carrying a pointer still aliases the pointee.
+	OIDCExpiry time.Time `json:"oidc_expiry,omitzero"`
+	TokenHash  string    `json:"-"`
+	AuthMethod Method    `json:"auth_method"`
+	IPAddress  string    `json:"ip_address"`
+	UserID     int64     `json:"user_id"`
 }
 
 // PasskeyCredential represents a WebAuthn/FIDO2 credential registered to a user.
@@ -106,14 +113,17 @@ type KeyRef struct {
 
 // Key represents a machine-to-machine API key for a user.
 type Key struct {
-	CreatedAt time.Time  `json:"created_at"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	KeyHash   string     `json:"-"`
-	KeyPrefix string     `json:"key_prefix"`
-	KeySuffix string     `json:"key_suffix"`
-	Label     string     `json:"label"`
-	ID        int64      `json:"id"`
-	UserID    int64      `json:"user_id"`
+	CreatedAt time.Time `json:"created_at"`
+	// ExpiresAt is when the key stops being accepted, or the zero Time for a
+	// key that never expires. See [Session.OIDCExpiry] for why an optional
+	// timestamp is a value here rather than a *time.Time.
+	ExpiresAt time.Time `json:"expires_at,omitzero"`
+	KeyHash   string    `json:"-"`
+	KeyPrefix string    `json:"key_prefix"`
+	KeySuffix string    `json:"key_suffix"`
+	Label     string    `json:"label"`
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
 }
 
 // OIDCConfig holds OIDC provider settings.

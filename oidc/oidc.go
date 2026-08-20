@@ -190,6 +190,10 @@ func (p *Provider) AuthorizationURL(state State, nonce Nonce, codeChallenge Code
 
 // Exchange exchanges an authorization code for tokens and validates the ID token.
 //
+// The returned expiry is the OAuth2 token's expiry, or the zero Time when the
+// provider issued none; it is shaped to drop straight into
+// [auth.Session.OIDCExpiry].
+//
 // nonce MUST be the non-empty, single-use, cryptographically random value that was
 // bound into the matching AuthorizationURL call and stored server-side for this
 // authorization request. Exchange requires the ID token's nonce claim to equal it,
@@ -198,7 +202,7 @@ func (p *Provider) AuthorizationURL(state State, nonce Nonce, codeChallenge Code
 // always supplies a non-empty nonce, so an empty value can never satisfy the check.
 // PKCE and the state parameter remain in force regardless, but the nonce binding is
 // a distinct protection.
-func (p *Provider) Exchange(ctx context.Context, code Code, codeVerifier CodeVerifier, nonce Nonce) (*Claims, *time.Time, error) {
+func (p *Provider) Exchange(ctx context.Context, code Code, codeVerifier CodeVerifier, nonce Nonce) (*Claims, time.Time, error) {
 	ctx, cancel := context.WithTimeout(ctx, oidcHTTPTimeout)
 	defer cancel()
 
@@ -206,21 +210,21 @@ func (p *Provider) Exchange(ctx context.Context, code Code, codeVerifier CodeVer
 		oauth2.SetAuthURLParam("code_verifier", string(codeVerifier)),
 	)
 	if err != nil {
-		return nil, nil, errors.Join(ErrExchange, err)
+		return nil, time.Time{}, errors.Join(ErrExchange, err)
 	}
 
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
-		return nil, nil, fmt.Errorf("%w: id_token not present in token response", ErrTokenInvalid)
+		return nil, time.Time{}, fmt.Errorf("%w: id_token not present in token response", ErrTokenInvalid)
 	}
 
 	idToken, err := p.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
-		return nil, nil, errors.Join(ErrTokenInvalid, err)
+		return nil, time.Time{}, errors.Join(ErrTokenInvalid, err)
 	}
 
 	if err := checkNonce(string(nonce), idToken.Nonce); err != nil {
-		return nil, nil, err
+		return nil, time.Time{}, err
 	}
 
 	// OIDC Core §3.1.3.7 step 3: if multiple audiences, verify azp equals ClientID.
@@ -229,24 +233,19 @@ func (p *Provider) Exchange(ctx context.Context, code Code, codeVerifier CodeVer
 			AZP string `json:"azp"`
 		}
 		if err := idToken.Claims(&rawClaims); err != nil {
-			return nil, nil, errors.Join(ErrTokenInvalid, err)
+			return nil, time.Time{}, errors.Join(ErrTokenInvalid, err)
 		}
 		if err := checkAuthorizedParty(idToken.Audience, rawClaims.AZP, p.config.ClientID); err != nil {
-			return nil, nil, err
+			return nil, time.Time{}, err
 		}
 	}
 
 	var claims Claims
 	if err := idToken.Claims(&claims); err != nil {
-		return nil, nil, errors.Join(ErrTokenInvalid, err)
+		return nil, time.Time{}, errors.Join(ErrTokenInvalid, err)
 	}
 
-	var expiry *time.Time
-	if !token.Expiry.IsZero() {
-		expiry = &token.Expiry
-	}
-
-	return &claims, expiry, nil
+	return &claims, token.Expiry, nil
 }
 
 // checkNonce enforces ID-token nonce binding: the ID token's nonce claim MUST

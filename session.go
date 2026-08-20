@@ -62,7 +62,7 @@ func ValidateSession(sess *Session, timeouts SessionTimeouts, now time.Time) err
 	if now.Sub(sess.CreatedAt) > timeouts.Absolute {
 		return ErrSessionExpired
 	}
-	if sess.OIDCExpiry != nil && now.After(*sess.OIDCExpiry) {
+	if !sess.OIDCExpiry.IsZero() && now.After(sess.OIDCExpiry) {
 		return ErrSessionExpired
 	}
 	return nil
