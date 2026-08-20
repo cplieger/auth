@@ -27,6 +27,21 @@ import (
 // which are SEARCHES: an empty slice with a nil error is the correct answer
 // there and no `found` result is warranted. The narrow verifier interfaces in
 // store_iface.go declare this same contract.
+//
+// OWNERSHIP: a lookup returns a value the CALLER owns. An implementation must
+// not hand back a pointer it goes on to mutate, and must not read a pointer the
+// caller passed to a write method after that method returns. Both halves are
+// load-bearing rather than stylistic. This library reads a returned *Session
+// after the lookup — [ValidateSession] reads LastActivity, and
+// UpdateSessionActivity writes it — and two concurrent verifications of the
+// same session run those against each other, so a store that returns an alias
+// to state it keeps mutating creates a data race inside the caller, which no
+// amount of locking inside the store can fix. A store that scans each query
+// into a fresh value satisfies this for free, which is why a SQL-backed
+// implementation cannot get it wrong; an in-memory or caching implementation
+// must copy explicitly. [github.com/cplieger/auth/v4/authtest.MemStore] is the
+// worked example, and its TestMemStoreIsolatesStoredValues is the shape of test
+// that pins it.
 
 // UserStore persists user account data.
 type UserStore interface {

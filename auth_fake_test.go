@@ -26,6 +26,12 @@ func newFakeSessionStore() *fakeSessionStore {
 	}
 }
 
+// SessionByHash returns a COPY, per the ownership rule in store_contract.go:
+// UpdateSessionActivity mutates the stored session under f.mu, and a caller
+// reading a returned alias outside that lock is a data race. Returning the
+// stored pointer here produced exactly that race in
+// TestSessionVerifier_Throttle_ConcurrentSafe, between ValidateSession's read
+// of LastActivity and a sibling verification's write of it.
 func (f *fakeSessionStore) SessionByHash(_ context.Context, tokenHash string) (*Session, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -33,7 +39,7 @@ func (f *fakeSessionStore) SessionByHash(_ context.Context, tokenHash string) (*
 	if !ok {
 		return nil, false, nil
 	}
-	return s, true, nil
+	return new(*s), true, nil
 }
 
 func (f *fakeSessionStore) UserByID(_ context.Context, id int64) (*User, bool, error) {
@@ -43,7 +49,7 @@ func (f *fakeSessionStore) UserByID(_ context.Context, id int64) (*User, bool, e
 	if !ok {
 		return nil, false, nil
 	}
-	return u, true, nil
+	return new(*u), true, nil
 }
 
 func (f *fakeSessionStore) APIKeyByHash(_ context.Context, hash string) (*Key, bool, error) {
@@ -53,7 +59,7 @@ func (f *fakeSessionStore) APIKeyByHash(_ context.Context, hash string) (*Key, b
 	if !ok {
 		return nil, false, nil
 	}
-	return k, true, nil
+	return new(*k), true, nil
 }
 
 func (f *fakeSessionStore) UpdateSessionActivity(_ context.Context, tokenHash string, now time.Time) error {
@@ -144,8 +150,7 @@ func (f *fakeSessionStore) PasskeyByCredentialID(_ context.Context, credID []byt
 	defer f.mu.Unlock()
 	for i := range f.passkeys {
 		if bytesEqual(f.passkeys[i].CredentialID, credID) {
-			cp := f.passkeys[i]
-			return &cp, nil
+			return new(f.passkeys[i]), nil
 		}
 	}
 	return nil, nil
