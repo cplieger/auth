@@ -31,10 +31,7 @@ func newVerifierSession(t *testing.T, enabled bool) (*fakeSessionStore, string) 
 	if err := store.CreateUser(ctx, user); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	plaintext, hash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatalf("GenerateSessionToken: %v", err)
-	}
+	plaintext, hash := GenerateSessionToken()
 	now := time.Now()
 	if err := store.CreateSession(ctx, &Session{TokenHash: hash, UserID: user.ID, CreatedAt: now, LastActivity: now}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -93,10 +90,7 @@ func TestSessionVerifier_Verify_idleTimeoutOption_expiresOldSession(t *testing.T
 	if err := store.CreateUser(ctx, user); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	plain, hash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatalf("GenerateSessionToken: %v", err)
-	}
+	plain, hash := GenerateSessionToken()
 	past := time.Now().Add(-2 * time.Hour)
 	if err := store.CreateSession(ctx, &Session{
 		TokenHash: hash, UserID: user.ID, AuthMethod: MethodPassword,
@@ -250,10 +244,7 @@ func TestSessionVerifier_updates_activity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash := GenerateSessionToken()
 	created := time.Now().Add(-30 * time.Minute)
 	if err := db.CreateSession(ctx, &Session{
 		TokenHash: hash, UserID: user.ID, AuthMethod: "password",

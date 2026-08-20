@@ -55,10 +55,7 @@ func TestNewSessionVerifier_NoOptions_SessionValid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash := GenerateSessionToken()
 	now := time.Now()
 	if err := db.CreateSession(ctx, &Session{
 		TokenHash: hash, UserID: user.ID, AuthMethod: "password",
@@ -96,10 +93,7 @@ func TestNew_NoOptions_SessionValid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash := GenerateSessionToken()
 	now := time.Now()
 	if err := db.CreateSession(ctx, &Session{
 		TokenHash: hash, UserID: user.ID, AuthMethod: "password",
@@ -136,10 +130,7 @@ func TestNewAPIKeyVerifier_NoOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash, prefix, suffix := GenerateAPIKey("ak_")
 	if err := db.CreateAPIKey(ctx, &Key{
 		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix, Label: "test",
 	}); err != nil {
@@ -235,10 +226,7 @@ func TestNewHasher_NoPepper_EqualsOldBehavior(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hash, err := h.Hash("test-password")
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash := h.Hash("test-password")
 	// Package-level verify (no pepper) should work
 	ok, err := VerifyPassword("test-password", hash)
 	if err != nil {

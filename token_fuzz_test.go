@@ -14,10 +14,7 @@ func FuzzVerifyOpaqueToken(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, fuzzInput string) {
 		// Generate a real token via production code
-		plaintext, hash, err := GenerateOpaqueToken()
-		if err != nil {
-			t.Skipf("GenerateOpaqueToken error: %v", err)
-		}
+		plaintext, hash := GenerateOpaqueToken()
 
 		// Round-trip: correct plaintext must verify
 		if err := VerifyOpaqueToken(plaintext, hash, time.Now().Add(time.Hour)); err != nil {

@@ -16,10 +16,7 @@ func TestProperty_SessionTokenUniquenessAndEntropy(t *testing.T) {
 		hashes := make(map[string]struct{}, n)
 
 		for i := range n {
-			plaintext, hash, err := GenerateSessionToken()
-			if err != nil {
-				t.Fatalf("GenerateSessionToken[%d] error: %v", i, err)
-			}
+			plaintext, hash := GenerateSessionToken()
 
 			raw, err := hex.DecodeString(plaintext)
 			if err != nil {
@@ -129,10 +126,7 @@ func TestProperty_SessionCleanupCompleteness(t *testing.T) {
 				createdAt = now.Add(-age)
 			}
 
-			_, hash, err := GenerateSessionToken()
-			if err != nil {
-				rt.Fatalf("GenerateSessionToken[%d]: %v", i, err)
-			}
+			_, hash := GenerateSessionToken()
 
 			if err := db.CreateSession(ctx, &Session{
 				TokenHash: hash, UserID: user.ID, AuthMethod: "password",

@@ -25,10 +25,7 @@ func FuzzVerifyAPIKey(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, fuzzInput string) {
 		// Generate a real API key
-		plaintext, hash, _, _, err := GenerateAPIKey("ak_")
-		if err != nil {
-			t.Skipf("GenerateAPIKey error: %v", err)
-		}
+		plaintext, hash, _, _ := GenerateAPIKey("ak_")
 
 		store := &fakeAPIKeyStore{key: &Key{KeyHash: hash, UserID: 1}}
 

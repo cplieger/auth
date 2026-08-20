@@ -26,11 +26,7 @@ const (
 
 // dummyHash lazily computes the timing-equalization hash exactly once.
 var dummyHash = sync.OnceValue(func() string {
-	h, err := HashPassword("dummy-init-password")
-	if err != nil {
-		panic("auth: failed to generate dummy hash: " + err.Error())
-	}
-	return h
+	return HashPassword("dummy-init-password")
 })
 
 // DummyHash returns a pre-computed Argon2id hash used by the login handler
@@ -54,7 +50,8 @@ var defaultHasher = sync.OnceValue(func() *Hasher {
 // HashPassword hashes a password using Argon2id with OWASP parameters.
 // Returns the hash in PHC string format:
 // $argon2id$v=19$m=19456,t=2,p=1$<base64-salt>$<base64-hash>
-func HashPassword(password string) (string, error) {
+// It cannot fail; see [Hasher.Hash].
+func HashPassword(password string) string {
 	return defaultHasher().Hash(password)
 }
 

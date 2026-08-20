@@ -132,14 +132,8 @@ func TestTrustForwardedHeaders_Enabled_FalseForHTTP(t *testing.T) {
 
 func TestRotateSessionToken_ProducesNewToken(t *testing.T) {
 	t.Parallel()
-	oldPlain, oldHash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
-	newPlain, newHash, gotOldHash, err := RotateSessionToken(oldPlain)
-	if err != nil {
-		t.Fatal(err)
-	}
+	oldPlain, oldHash := GenerateSessionToken()
+	newPlain, newHash, gotOldHash := RotateSessionToken(oldPlain)
 	if gotOldHash != oldHash {
 		t.Errorf("RotateSessionToken() oldHash = %q, want %q", gotOldHash, oldHash)
 	}
@@ -164,10 +158,7 @@ func TestRotateSessionToken_OldTokenBecomesInvalid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	oldPlain, oldHash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	oldPlain, oldHash := GenerateSessionToken()
 	now := time.Now()
 	if err := db.CreateSession(ctx, &Session{
 		TokenHash: oldHash, UserID: user.ID, AuthMethod: "password",
@@ -177,10 +168,7 @@ func TestRotateSessionToken_OldTokenBecomesInvalid(t *testing.T) {
 	}
 
 	// Rotate
-	_, newHash, _, err := RotateSessionToken(oldPlain)
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, newHash, _ := RotateSessionToken(oldPlain)
 	// Simulate store rotation: delete old, create new
 	if err := db.DeleteSession(ctx, oldHash); err != nil {
 		t.Fatal(err)

@@ -9,14 +9,8 @@ import (
 
 func TestRotateSessionToken(t *testing.T) {
 	t.Parallel()
-	oldPlain, oldHash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
-	newPlain, newHash, gotOldHash, err := RotateSessionToken(oldPlain)
-	if err != nil {
-		t.Fatal(err)
-	}
+	oldPlain, oldHash := GenerateSessionToken()
+	newPlain, newHash, gotOldHash := RotateSessionToken(oldPlain)
 	if gotOldHash != oldHash {
 		t.Errorf("RotateSessionToken() oldHash = %q, want %q", gotOldHash, oldHash)
 	}
@@ -146,10 +140,7 @@ func TestCSRFToken_BitFlip_rejected(t *testing.T) {
 
 func TestGenerateOpaqueToken(t *testing.T) {
 	t.Parallel()
-	plain, hash, err := GenerateOpaqueToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	plain, hash := GenerateOpaqueToken()
 	if len(plain) != 64 { // 32 bytes hex-encoded
 		t.Errorf("GenerateOpaqueToken() plaintext length = %d, want 64", len(plain))
 	}
@@ -160,7 +151,7 @@ func TestGenerateOpaqueToken(t *testing.T) {
 
 func TestVerifyOpaqueToken_Valid(t *testing.T) {
 	t.Parallel()
-	plain, hash, _ := GenerateOpaqueToken()
+	plain, hash := GenerateOpaqueToken()
 	expires := time.Now().Add(time.Hour)
 	if err := VerifyOpaqueToken(plain, hash, expires); err != nil {
 		t.Fatalf("expected valid, got %v", err)
@@ -169,7 +160,7 @@ func TestVerifyOpaqueToken_Valid(t *testing.T) {
 
 func TestVerifyOpaqueToken_Expired(t *testing.T) {
 	t.Parallel()
-	plain, hash, _ := GenerateOpaqueToken()
+	plain, hash := GenerateOpaqueToken()
 	expires := time.Now().Add(-time.Hour)
 	if err := VerifyOpaqueToken(plain, hash, expires); err != ErrTokenExpired {
 		t.Fatalf("expected ErrTokenExpired, got %v", err)
@@ -178,7 +169,7 @@ func TestVerifyOpaqueToken_Expired(t *testing.T) {
 
 func TestVerifyOpaqueToken_WrongToken(t *testing.T) {
 	t.Parallel()
-	_, hash, _ := GenerateOpaqueToken()
+	_, hash := GenerateOpaqueToken()
 	expires := time.Now().Add(time.Hour)
 	if err := VerifyOpaqueToken("wrong", hash, expires); err != ErrTokenInvalid {
 		t.Fatalf("expected ErrTokenInvalid, got %v", err)

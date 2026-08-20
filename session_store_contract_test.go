@@ -134,10 +134,7 @@ func TestProperty_SessionInvalidationOnPasswordChange(t *testing.T) {
 		n := rapid.IntRange(1, 10).Draw(rt, "numSessions")
 		hashes := make([]string, n)
 		for i := range n {
-			_, hash, err := GenerateSessionToken()
-			if err != nil {
-				rt.Fatalf("GenerateSessionToken[%d]: %v", i, err)
-			}
+			_, hash := GenerateSessionToken()
 			hashes[i] = hash
 			sess := &Session{
 				TokenHash:  hash,
