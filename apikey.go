@@ -31,7 +31,7 @@ func GenerateAPIKey(keyPrefix string) (plaintext, hash, displayPrefix, displaySu
 // is not found or has expired.
 func VerifyAPIKey(ctx context.Context, store APIKeyReader, key string) (*Key, error) {
 	hash := APIKeyHash(key)
-	apiKey, found, err := store.GetAPIKeyByHash(ctx, hash)
+	apiKey, found, err := store.APIKeyByHash(ctx, hash)
 	if err != nil {
 		return nil, err
 	}

@@ -31,9 +31,9 @@ const CeremonyTimeout = 5 * time.Minute
 // the lower-level ceremony helpers ([BeginLogin], [FinishLogin]) with their
 // own user finder do not need it.
 type Store interface {
-	GetPasskeysByUserID(ctx context.Context, userID int64) ([]auth.PasskeyCredential, error)
+	PasskeysByUserID(ctx context.Context, userID int64) ([]auth.PasskeyCredential, error)
 	UpdatePasskeyAfterLogin(ctx context.Context, credID []byte, signCount uint32, flags auth.PasskeyFlags) error
-	GetUserByID(ctx context.Context, id int64) (user *auth.User, found bool, err error)
+	UserByID(ctx context.Context, id int64) (user *auth.User, found bool, err error)
 }
 
 const (
@@ -384,11 +384,11 @@ func storeUserFinder(ctx context.Context, store Store) func(rawID, userHandle []
 		if userID <= 0 {
 			return nil, errors.New("invalid user handle")
 		}
-		user, found, err := store.GetUserByID(ctx, userID)
+		user, found, err := store.UserByID(ctx, userID)
 		if err != nil || !found {
 			return nil, errors.New("user not found")
 		}
-		creds, err := store.GetPasskeysByUserID(ctx, user.ID)
+		creds, err := store.PasskeysByUserID(ctx, user.ID)
 		if err != nil {
 			return nil, errors.New("get passkeys failed")
 		}

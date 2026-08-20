@@ -19,12 +19,12 @@ func TestMemStore_user_roundtrip(t *testing.T) {
 	u := &auth.User{Username: "test", Role: auth.RoleUser, Enabled: true}
 	store.AddUser(u)
 
-	got, _, err := store.GetUserByID(t.Context(), u.ID)
+	got, _, err := store.UserByID(t.Context(), u.ID)
 	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
+		t.Fatalf("UserByID: %v", err)
 	}
 	if got == nil || got.Username != "test" {
-		t.Fatalf("GetUserByID = %+v, want username %q", got, "test")
+		t.Fatalf("UserByID = %+v, want username %q", got, "test")
 	}
 }
 
@@ -35,12 +35,12 @@ func TestMemStore_session_roundtrip(t *testing.T) {
 	now := time.Now()
 	store.AddSession(&auth.Session{TokenHash: "hash1", CreatedAt: now, LastActivity: now})
 
-	sess, _, err := store.GetSessionByHash(t.Context(), "hash1")
+	sess, _, err := store.SessionByHash(t.Context(), "hash1")
 	if err != nil {
-		t.Fatalf("GetSessionByHash: %v", err)
+		t.Fatalf("SessionByHash: %v", err)
 	}
 	if sess == nil {
-		t.Fatal("GetSessionByHash = nil, want stored session")
+		t.Fatal("SessionByHash = nil, want stored session")
 	}
 }
 
@@ -57,9 +57,9 @@ func TestMemStore_UpdateSessionActivity(t *testing.T) {
 		t.Fatalf("UpdateSessionActivity: %v", err)
 	}
 
-	sess, _, err := store.GetSessionByHash(ctx, "hash1")
+	sess, _, err := store.SessionByHash(ctx, "hash1")
 	if err != nil {
-		t.Fatalf("GetSessionByHash: %v", err)
+		t.Fatalf("SessionByHash: %v", err)
 	}
 	if !sess.LastActivity.Equal(later) {
 		t.Errorf("LastActivity = %v, want %v", sess.LastActivity, later)
@@ -72,12 +72,12 @@ func TestMemStore_apikey_roundtrip(t *testing.T) {
 
 	store.AddAPIKey(&auth.Key{KeyHash: "keyhash", Label: "test"})
 
-	key, _, err := store.GetAPIKeyByHash(t.Context(), "keyhash")
+	key, _, err := store.APIKeyByHash(t.Context(), "keyhash")
 	if err != nil {
-		t.Fatalf("GetAPIKeyByHash: %v", err)
+		t.Fatalf("APIKeyByHash: %v", err)
 	}
 	if key == nil || key.Label != "test" {
-		t.Fatalf("GetAPIKeyByHash = %+v, want label %q", key, "test")
+		t.Fatalf("APIKeyByHash = %+v, want label %q", key, "test")
 	}
 }
 
@@ -97,9 +97,9 @@ func TestMemStore_DeleteUserSessions_keepsExcepted(t *testing.T) {
 
 	assertPresent := func(hash string, want bool) {
 		t.Helper()
-		s, _, err := store.GetSessionByHash(ctx, hash)
+		s, _, err := store.SessionByHash(ctx, hash)
 		if err != nil {
-			t.Fatalf("GetSessionByHash(%s): %v", hash, err)
+			t.Fatalf("SessionByHash(%s): %v", hash, err)
 		}
 		if (s != nil) != want {
 			t.Errorf("session %s present=%v, want %v", hash, s != nil, want)
@@ -121,9 +121,9 @@ func TestMemStore_DeleteSession_removes(t *testing.T) {
 	if err := store.DeleteSession(ctx, "h"); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
-	s, _, err := store.GetSessionByHash(ctx, "h")
+	s, _, err := store.SessionByHash(ctx, "h")
 	if err != nil {
-		t.Fatalf("GetSessionByHash: %v", err)
+		t.Fatalf("SessionByHash: %v", err)
 	}
 	if s != nil {
 		t.Error("session present after DeleteSession, want deleted")
@@ -135,13 +135,13 @@ func TestMemStore_missing_lookups_report_not_found(t *testing.T) {
 	store := authtest.NewMemStore()
 	ctx := t.Context()
 
-	if u, found, err := store.GetUserByID(ctx, 999); err != nil || found || u != nil {
-		t.Errorf("GetUserByID(999) = (%+v, %t, %v), want (nil, false, nil)", u, found, err)
+	if u, found, err := store.UserByID(ctx, 999); err != nil || found || u != nil {
+		t.Errorf("UserByID(999) = (%+v, %t, %v), want (nil, false, nil)", u, found, err)
 	}
-	if k, found, err := store.GetAPIKeyByHash(ctx, "absent"); err != nil || found || k != nil {
-		t.Errorf("GetAPIKeyByHash(%q) = (%+v, %t, %v), want (nil, false, nil)", "absent", k, found, err)
+	if k, found, err := store.APIKeyByHash(ctx, "absent"); err != nil || found || k != nil {
+		t.Errorf("APIKeyByHash(%q) = (%+v, %t, %v), want (nil, false, nil)", "absent", k, found, err)
 	}
-	if s, found, err := store.GetSessionByHash(ctx, "absent"); err != nil || found || s != nil {
-		t.Errorf("GetSessionByHash(%q) = (%+v, %t, %v), want (nil, false, nil)", "absent", s, found, err)
+	if s, found, err := store.SessionByHash(ctx, "absent"); err != nil || found || s != nil {
+		t.Errorf("SessionByHash(%q) = (%+v, %t, %v), want (nil, false, nil)", "absent", s, found, err)
 	}
 }

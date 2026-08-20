@@ -10,7 +10,7 @@ import (
 // passkeys, API keys, and OIDC state — that a consumer's storage layer
 // implements and its HTTP handlers call. The auth library's own mechanisms
 // consume only the narrow verifier interfaces (see store_iface.go); the role
-// interfaces here mirror the library's ceremonies (GetUserByOIDCSub is
+// interfaces here mirror the library's ceremonies (UserByOIDCSub is
 // oidc.ResolveUser's lookup key, UpdatePasskeyAfterLogin is the post-login
 // credential custody, ConsumeOIDCState encodes single-use state), so a
 // storage layer implementing them end to end is equipped for every library
@@ -31,10 +31,10 @@ import (
 // UserStore persists user account data.
 type UserStore interface {
 	CreateUser(ctx context.Context, user *User) error
-	GetUserByID(ctx context.Context, id int64) (user *User, found bool, err error)
-	GetUserByUsername(ctx context.Context, username string) (u *User, found bool, err error)
-	GetUserByEmail(ctx context.Context, email string) (user *User, found bool, err error)
-	GetUserByOIDCSub(ctx context.Context, issuer, sub string) (user *User, found bool, err error)
+	UserByID(ctx context.Context, id int64) (user *User, found bool, err error)
+	UserByUsername(ctx context.Context, username string) (u *User, found bool, err error)
+	UserByEmail(ctx context.Context, email string) (user *User, found bool, err error)
+	UserByOIDCSub(ctx context.Context, issuer, sub string) (user *User, found bool, err error)
 	ListUsers(ctx context.Context) ([]User, error)
 	UpdateUser(ctx context.Context, user *User) error
 	DeleteUser(ctx context.Context, id int64) error
@@ -44,7 +44,7 @@ type UserStore interface {
 // SessionPersister persists session data.
 type SessionPersister interface {
 	CreateSession(ctx context.Context, sess *Session) error
-	GetSessionByHash(ctx context.Context, tokenHash string) (sess *Session, found bool, err error)
+	SessionByHash(ctx context.Context, tokenHash string) (sess *Session, found bool, err error)
 	UpdateSessionActivity(ctx context.Context, tokenHash string, now time.Time) error
 	DeleteSession(ctx context.Context, tokenHash string) error
 	DeleteUserSessions(ctx context.Context, userID int64, exceptHash string) error
@@ -54,8 +54,8 @@ type SessionPersister interface {
 // PasskeyStore persists WebAuthn/FIDO2 credentials.
 type PasskeyStore interface {
 	CreatePasskey(ctx context.Context, cred *PasskeyCredential) error
-	GetPasskeysByUserID(ctx context.Context, userID int64) ([]PasskeyCredential, error)
-	GetPasskeyByCredentialID(ctx context.Context, credID []byte) (cred *PasskeyCredential, found bool, err error)
+	PasskeysByUserID(ctx context.Context, userID int64) ([]PasskeyCredential, error)
+	PasskeyByCredentialID(ctx context.Context, credID []byte) (cred *PasskeyCredential, found bool, err error)
 	UpdatePasskeyAfterLogin(ctx context.Context, credID []byte, signCount uint32, flags PasskeyFlags) error
 	RenamePasskey(ctx context.Context, ref PasskeyRef, name string) error
 	DeletePasskey(ctx context.Context, ref PasskeyRef) error
@@ -65,7 +65,7 @@ type PasskeyStore interface {
 // KeyStore persists machine-to-machine API keys.
 type KeyStore interface {
 	CreateAPIKey(ctx context.Context, key *Key) error
-	GetAPIKeyByHash(ctx context.Context, hash string) (key *Key, found bool, err error)
+	APIKeyByHash(ctx context.Context, hash string) (key *Key, found bool, err error)
 	ListAPIKeysByUserID(ctx context.Context, userID int64) ([]Key, error)
 	DeleteAPIKey(ctx context.Context, ref KeyRef) error
 }

@@ -14,45 +14,45 @@ func AuthenticatorStoreContractSuite(t *testing.T, newStore func(t *testing.T) A
 	t.Run("GetSessionByHash_missing_reports_not_found", func(t *testing.T) {
 		t.Parallel()
 		s := newStore(t)
-		sess, found, err := s.GetSessionByHash(t.Context(), "nonexistent")
+		sess, found, err := s.SessionByHash(t.Context(), "nonexistent")
 		if err != nil {
-			t.Fatalf("GetSessionByHash(%q) err = %v, want nil: absence is not a failure", "nonexistent", err)
+			t.Fatalf("SessionByHash(%q) err = %v, want nil: absence is not a failure", "nonexistent", err)
 		}
 		if found {
-			t.Errorf("GetSessionByHash(%q) found = true, want false", "nonexistent")
+			t.Errorf("SessionByHash(%q) found = true, want false", "nonexistent")
 		}
 		if sess != nil {
-			t.Errorf("GetSessionByHash(%q) sess = %+v, want nil", "nonexistent", sess)
+			t.Errorf("SessionByHash(%q) sess = %+v, want nil", "nonexistent", sess)
 		}
 	})
 
 	t.Run("GetUserByID_missing_reports_not_found", func(t *testing.T) {
 		t.Parallel()
 		s := newStore(t)
-		user, found, err := s.GetUserByID(t.Context(), 99999)
+		user, found, err := s.UserByID(t.Context(), 99999)
 		if err != nil {
-			t.Fatalf("GetUserByID(99999) err = %v, want nil: absence is not a failure", err)
+			t.Fatalf("UserByID(99999) err = %v, want nil: absence is not a failure", err)
 		}
 		if found {
-			t.Errorf("GetUserByID(99999) found = true, want false")
+			t.Errorf("UserByID(99999) found = true, want false")
 		}
 		if user != nil {
-			t.Errorf("GetUserByID(99999) user = %+v, want nil", user)
+			t.Errorf("UserByID(99999) user = %+v, want nil", user)
 		}
 	})
 
 	t.Run("GetAPIKeyByHash_missing_reports_not_found", func(t *testing.T) {
 		t.Parallel()
 		s := newStore(t)
-		key, found, err := s.GetAPIKeyByHash(t.Context(), "nonexistent")
+		key, found, err := s.APIKeyByHash(t.Context(), "nonexistent")
 		if err != nil {
-			t.Fatalf("GetAPIKeyByHash(%q) err = %v, want nil: absence is not a failure", "nonexistent", err)
+			t.Fatalf("APIKeyByHash(%q) err = %v, want nil: absence is not a failure", "nonexistent", err)
 		}
 		if found {
-			t.Errorf("GetAPIKeyByHash(%q) found = true, want false", "nonexistent")
+			t.Errorf("APIKeyByHash(%q) found = true, want false", "nonexistent")
 		}
 		if key != nil {
-			t.Errorf("GetAPIKeyByHash(%q) key = %+v, want nil", "nonexistent", key)
+			t.Errorf("APIKeyByHash(%q) key = %+v, want nil", "nonexistent", key)
 		}
 	})
 }
@@ -79,9 +79,9 @@ func TestFakeSessionStore_roundtrip(t *testing.T) {
 	if err := store.CreateUser(ctx, u); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	got, _, err := store.GetUserByID(ctx, u.ID)
+	got, _, err := store.UserByID(ctx, u.ID)
 	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
+		t.Fatalf("UserByID: %v", err)
 	}
 	if got == nil || got.Username != "contract-user" {
 		t.Fatalf("got %+v", got)
@@ -92,9 +92,9 @@ func TestFakeSessionStore_roundtrip(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	gotSess, _, err := store.GetSessionByHash(ctx, "test-hash")
+	gotSess, _, err := store.SessionByHash(ctx, "test-hash")
 	if err != nil {
-		t.Fatalf("GetSessionByHash: %v", err)
+		t.Fatalf("SessionByHash: %v", err)
 	}
 	if gotSess == nil || gotSess.UserID != u.ID {
 		t.Fatalf("got %+v", gotSess)
@@ -103,9 +103,9 @@ func TestFakeSessionStore_roundtrip(t *testing.T) {
 	if err := store.CreateAPIKey(ctx, &Key{KeyHash: "key-hash", UserID: u.ID, Label: "k"}); err != nil {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
-	gotKey, _, err := store.GetAPIKeyByHash(ctx, "key-hash")
+	gotKey, _, err := store.APIKeyByHash(ctx, "key-hash")
 	if err != nil {
-		t.Fatalf("GetAPIKeyByHash: %v", err)
+		t.Fatalf("APIKeyByHash: %v", err)
 	}
 	if gotKey == nil || gotKey.Label != "k" {
 		t.Fatalf("got %+v", gotKey)
@@ -159,9 +159,9 @@ func TestProperty_SessionInvalidationOnPasswordChange(t *testing.T) {
 
 		remaining := 0
 		for _, h := range hashes {
-			s, _, err := db.GetSessionByHash(ctx, h)
+			s, _, err := db.SessionByHash(ctx, h)
 			if err != nil {
-				rt.Fatalf("GetSessionByHash(%s): %v", h, err)
+				rt.Fatalf("SessionByHash(%s): %v", h, err)
 			}
 			if s != nil {
 				remaining++

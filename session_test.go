@@ -151,9 +151,9 @@ func TestProperty_SessionCleanupCompleteness(t *testing.T) {
 		}
 
 		for _, h := range validHashes {
-			s, _, err := db.GetSessionByHash(ctx, h)
+			s, _, err := db.SessionByHash(ctx, h)
 			if err != nil {
-				rt.Fatalf("GetSessionByHash(%s): %v", h, err)
+				rt.Fatalf("SessionByHash(%s): %v", h, err)
 			}
 			if s == nil {
 				rt.Fatalf("valid session %s was deleted", h)

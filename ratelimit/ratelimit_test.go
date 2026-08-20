@@ -296,7 +296,8 @@ func TestProperty_SlidingWindowCountPrunesCorrectly(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		window := time.Duration(rapid.IntRange(1, 3600).Draw(t, "windowSec")) * time.Second
 		now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC).Add(
-			time.Duration(rapid.IntRange(0, 86400).Draw(t, "offsetSec")) * time.Second)
+			time.Duration(rapid.IntRange(0, 86400).Draw(t, "offsetSec")) * time.Second,
+		)
 
 		n := rapid.IntRange(0, 50).Draw(t, "numEntries")
 		offsets := make([]int, n)
