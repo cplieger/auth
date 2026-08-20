@@ -3,10 +3,10 @@ package webauthn
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"slices"
 	"strings"
 	"testing"
+	"uuid"
 
 	"github.com/cplieger/auth/v4"
 	"github.com/cplieger/auth/v4/internal/capture"
@@ -16,12 +16,11 @@ import (
 
 // parseAAGUID parses a UUID string into 16 bytes.
 func parseAAGUID(s string) []byte {
-	clean := strings.ReplaceAll(s, "-", "")
-	b, err := hex.DecodeString(clean)
-	if err != nil || len(b) != 16 {
+	u, err := uuid.Parse(s)
+	if err != nil {
 		return nil
 	}
-	return b
+	return u[:]
 }
 
 func TestPasskeyFriendlyName(t *testing.T) {
