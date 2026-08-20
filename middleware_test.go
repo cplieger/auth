@@ -567,6 +567,34 @@ func TestAuthenticate_bypass(t *testing.T) {
 			t.Errorf("Authenticate(bypass disabled, no credentials) error = %v, want ErrUnauthenticated", err)
 		}
 	})
+	t.Run("each granted request gets its own principal", func(t *testing.T) {
+		t.Parallel()
+		on := mustAuthenticator(t, db, WithBypass(func() bool { return true }))
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		first, _, err := on.Authenticate(r)
+		if err != nil {
+			t.Fatalf("Authenticate(first) error = %v, want nil", err)
+		}
+		second, _, err := on.Authenticate(r)
+		if err != nil {
+			t.Fatalf("Authenticate(second) error = %v, want nil", err)
+		}
+		if first == second {
+			t.Fatal("Authenticate returned the same *User pointer twice; the granted principal is shared mutable state")
+		}
+		// A consumer annotating its own user must not rewrite the principal
+		// every later bypassed request receives.
+		first.Role = RoleUser
+		first.Username = "mutated"
+		third, _, err := on.Authenticate(r)
+		if err != nil {
+			t.Fatalf("Authenticate(third) error = %v, want nil", err)
+		}
+		if third.Role != RoleAdmin || third.Username != string(RoleAdmin) {
+			t.Errorf("after a caller mutated its own user, Authenticate() = {Role:%q Username:%q}, want {Role:%q Username:%q}",
+				third.Role, third.Username, RoleAdmin, string(RoleAdmin))
+		}
+	})
 }
 
 func TestNew_bypass_logs_production_warning(t *testing.T) {

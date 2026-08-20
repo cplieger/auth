@@ -83,9 +83,13 @@ func New(store AuthenticatorStore, opts ...Option) (*Authenticator, error) {
 	return a, nil
 }
 
-// syntheticAdminUser is the user injected when the configured bypass
-// function (see [WithBypass]) reports true.
-var syntheticAdminUser = &User{
+// syntheticAdminUser is the VALUE copied for each request the configured
+// bypass function (see [WithBypass]) grants. It is deliberately not a *User:
+// handing every bypassed request one shared pointer makes the granted
+// principal process-global mutable state, so a consumer that annotates "its"
+// user (an audit field, a role downgrade) silently rewrites the principal
+// every later bypassed request receives. Authenticate copies it per call.
+var syntheticAdminUser = User{
 	ID:       0,
 	Username: string(RoleAdmin),
 	Role:     RoleAdmin,
@@ -97,12 +101,19 @@ var syntheticAdminUser = &User{
 // then the API key (accepted only via the X-Api-Key header, never a URL query
 // parameter -- CWE-598). It returns the user and session hash, or
 // [ErrUnauthenticated] when no verifier authenticates the request.
+//
+// Every returned *User is the caller's to keep: on the bypass path it is a
+// fresh copy of the synthetic admin, and on the credential paths it is
+// whatever the store returned.
 func (a *Authenticator) Authenticate(r *http.Request) (*User, string, error) {
 	if a.cfg.bypass != nil && a.cfg.bypass() {
 		a.bypassWarned.Do(func() {
 			a.logger().Warn("auth: authentication bypass is active; matching requests are granted synthetic admin access and must never be enabled in production")
 		})
-		return syntheticAdminUser, "", nil
+		// new(expr) (Go 1.26): a fresh User per request, so no consumer can
+		// mutate the principal handed to any other request. User holds no
+		// pointer, slice or map field, so this copy is a complete one.
+		return new(syntheticAdminUser), "", nil
 	}
 
 	ctx := r.Context()
