@@ -67,7 +67,7 @@ func TestProperty_SessionExpiryEnforcement(t *testing.T) {
 		if hasOIDC {
 			oidcOffset := time.Duration(rapid.Int64Range(int64(-30*24*time.Hour), int64(30*24*time.Hour)).Draw(t, "oidcOffset"))
 			expiry := now.Add(oidcOffset)
-			sess.OIDCExpiry = &expiry
+			sess.OIDCExpiry = expiry
 			oidcExpired = now.After(expiry)
 		}
 

@@ -344,7 +344,7 @@ func TestZeroProviderExchangeFailsBeforeTheNilVerifier(t *testing.T) {
 	if !errors.Is(err, ErrExchange) {
 		t.Errorf("zero Provider Exchange err = %v, want errors.Is(err, ErrExchange): the empty token endpoint is what fails, not the verifier", err)
 	}
-	if claims != nil || expiry != nil {
-		t.Errorf("zero Provider Exchange = %+v, %v; want nil, nil alongside the error", claims, expiry)
+	if claims != nil || !expiry.IsZero() {
+		t.Errorf("zero Provider Exchange = %+v, %v; want nil and the zero Time alongside the error", claims, expiry)
 	}
 }

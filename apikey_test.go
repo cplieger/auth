@@ -145,7 +145,7 @@ func TestVerifyAPIKey_expired(t *testing.T) {
 	past := time.Now().Add(-time.Hour)
 	if err := db.CreateAPIKey(ctx, &Key{
 		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix,
-		Label: "expired", ExpiresAt: &past,
+		Label: "expired", ExpiresAt: past,
 	}); err != nil {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestVerifyAPIKey_not_expired(t *testing.T) {
 	future := time.Now().Add(time.Hour)
 	if err := db.CreateAPIKey(ctx, &Key{
 		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix,
-		Label: "valid", ExpiresAt: &future,
+		Label: "valid", ExpiresAt: future,
 	}); err != nil {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
