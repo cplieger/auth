@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -155,10 +156,7 @@ func (a *Authenticator) RequireAuth(w http.ResponseWriter, r *http.Request) (*Us
 
 // loginPath returns the configured login path or "/login".
 func (a *Authenticator) loginPath() string {
-	if a.cfg.loginPath != "" {
-		return a.cfg.loginPath
-	}
-	return "/login"
+	return cmp.Or(a.cfg.loginPath, "/login")
 }
 
 // logger returns the configured logger or slog.Default().
