@@ -16,10 +16,7 @@ import (
 func TestProperty_APIKeyHashVerificationRoundTrip(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(t *rapid.T) {
-		plaintext, returnedHash, _, _, err := GenerateAPIKey("ak_")
-		if err != nil {
-			t.Fatalf("GenerateAPIKey error: %v", err)
-		}
+		plaintext, returnedHash, _, _ := GenerateAPIKey("ak_")
 
 		h := sha256.Sum256([]byte(plaintext))
 		computedHash := hex.EncodeToString(h[:])
@@ -44,11 +41,8 @@ func TestProperty_APIKeyFormatAndUniqueness(t *testing.T) {
 		plaintexts := make(map[string]struct{}, n)
 		hashes := make(map[string]struct{}, n)
 
-		for i := range n {
-			plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
-			if err != nil {
-				t.Fatalf("GenerateAPIKey[%d] error: %v", i, err)
-			}
+		for range n {
+			plaintext, hash, prefix, suffix := GenerateAPIKey("ak_")
 
 			if len(plaintext) < 3 || plaintext[:3] != "ak_" {
 				t.Fatalf("key does not start with ak_")
@@ -88,10 +82,7 @@ func TestVerifyAPIKey_error_paths(t *testing.T) {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
-	if err != nil {
-		t.Fatalf("GenerateAPIKey: %v", err)
-	}
+	plaintext, hash, prefix, suffix := GenerateAPIKey("ak_")
 	if err := db.CreateAPIKey(ctx, &Key{
 		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix, Label: "test",
 	}); err != nil {
@@ -137,10 +128,7 @@ func TestVerifyAPIKey_expired(t *testing.T) {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
-	if err != nil {
-		t.Fatalf("GenerateAPIKey: %v", err)
-	}
+	plaintext, hash, prefix, suffix := GenerateAPIKey("ak_")
 
 	past := time.Now().Add(-time.Hour)
 	if err := db.CreateAPIKey(ctx, &Key{
@@ -150,7 +138,7 @@ func TestVerifyAPIKey_expired(t *testing.T) {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
 
-	_, err = VerifyAPIKey(ctx, db, plaintext)
+	_, err := VerifyAPIKey(ctx, db, plaintext)
 	if !errors.Is(err, ErrInvalidAPIKey) {
 		t.Fatalf("VerifyAPIKey(expired) = %v, want ErrInvalidAPIKey", err)
 	}
@@ -166,10 +154,7 @@ func TestVerifyAPIKey_not_expired(t *testing.T) {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
-	if err != nil {
-		t.Fatalf("GenerateAPIKey: %v", err)
-	}
+	plaintext, hash, prefix, suffix := GenerateAPIKey("ak_")
 
 	future := time.Now().Add(time.Hour)
 	if err := db.CreateAPIKey(ctx, &Key{
@@ -201,10 +186,7 @@ func TestGenerateAPIKey_custom_prefix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			plaintext, hash, displayPrefix, displaySuffix, err := GenerateAPIKey(tt.prefix)
-			if err != nil {
-				t.Fatalf("GenerateAPIKey(%q) error: %v", tt.prefix, err)
-			}
+			plaintext, hash, displayPrefix, displaySuffix := GenerateAPIKey(tt.prefix)
 			if tt.prefix != "" && plaintext[:len(tt.prefix)] != tt.prefix {
 				t.Errorf("plaintext %q does not start with prefix %q", plaintext, tt.prefix)
 			}
@@ -233,10 +215,7 @@ func (s *looseAPIKeyStore) APIKeyByHash(_ context.Context, _ string) (*Key, bool
 
 func TestVerifyAPIKey_rejects_hash_mismatch(t *testing.T) {
 	t.Parallel()
-	plaintext, _, _, _, err := GenerateAPIKey("ak_")
-	if err != nil {
-		t.Fatalf("GenerateAPIKey error: %v", err)
-	}
+	plaintext, _, _, _ := GenerateAPIKey("ak_")
 	// The store returns a record whose stored hash does NOT match the hash of
 	// the presented key. VerifyAPIKey must reject it rather than trust the
 	// store's lookup.
@@ -265,10 +244,7 @@ func TestProperty_APIKeyRoleInheritance(t *testing.T) {
 			rt.Fatalf("CreateUser: %v", err)
 		}
 
-		plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
-		if err != nil {
-			rt.Fatalf("GenerateAPIKey: %v", err)
-		}
+		plaintext, hash, prefix, suffix := GenerateAPIKey("ak_")
 		apiKey := &Key{
 			UserID:    user.ID,
 			KeyHash:   hash,

@@ -36,7 +36,7 @@ import (
 
 func main() {
 	// Hash a password (package-level with OWASP defaults)
-	hash, _ := auth.HashPassword("my-secure-password")
+	hash := auth.HashPassword("my-secure-password")
 
 	// Verify
 	ok, _ := auth.VerifyPassword("my-secure-password", hash)
@@ -47,7 +47,7 @@ func main() {
 		Memory: 65536, Iterations: 3, Parallelism: 2,
 		SaltLength: 16, KeyLength: 32,
 	}, auth.WithPepper([]byte("my-secret-pepper")))
-	hash2, _ := hasher.Hash("my-secure-password")
+	hash2 := hasher.Hash("my-secure-password")
 	ok2, _ := hasher.Verify("my-secure-password", hash2)
 	_, _ = hash2, ok2
 
@@ -126,8 +126,8 @@ if err != nil {
 
 Grouped summary of the exported surface. Signatures and full semantics live in the [Go Reference](https://pkg.go.dev/github.com/cplieger/auth/v4).
 
-- **Password hashing:** `HashPassword` / `VerifyPassword` / `NeedsRehash` (Argon2id PHC strings, OWASP defaults), `DummyHash` (constant-time timing equalization for unknown-user logins), `DefaultArgon2Params`, `NewHasher` + `WithPepper` (custom parameters, HMAC pepper), `Hasher.Hash` / `Hasher.Verify` / `Hasher.NeedsRehash`, `ValidateMultiFactorPasswordLength` / `ValidateSoloPasswordLength` (NIST, max 128; the solo variant applies the stricter minimum for accounts where password login is the sole factor), `ValidatePasswordContext`, `CheckBreachedPassword` (HIBP k-anonymity).
-- **Sessions and tokens:** `GenerateSessionToken` (256-bit), `RotateSessionToken`, `ValidateSession` (takes a `SessionTimeouts{Idle, Absolute}` pair), `SessionHash`, `HexSHA256`, `CSRFToken` / `VerifyCSRFToken` (bound to the session hash), `GenerateOpaqueToken` / `VerifyOpaqueToken` (password reset, email verification).
+- **Password hashing:** `HashPassword` / `VerifyPassword` / `NeedsRehash` (Argon2id PHC strings, OWASP defaults; `HashPassword` and `Hasher.Hash` return no error — their only former failure source was the salt draw, and `crypto/rand.Read` cannot fail since Go 1.24), `DummyHash` (constant-time timing equalization for unknown-user logins), `DefaultArgon2Params`, `NewHasher` + `WithPepper` (custom parameters, HMAC pepper), `Hasher.Hash` / `Hasher.Verify` / `Hasher.NeedsRehash`, `ValidateMultiFactorPasswordLength` / `ValidateSoloPasswordLength` (NIST, max 128; the solo variant applies the stricter minimum for accounts where password login is the sole factor), `ValidatePasswordContext`, `CheckBreachedPassword` (HIBP k-anonymity).
+- **Sessions and tokens:** `GenerateSessionToken` (256-bit; returns no error, like `RotateSessionToken`, `GenerateAPIKey`, `GenerateOpaqueToken`, `oidc.GenerateState` and `oidc.GeneratePKCE` — every generator whose only failure source was `crypto/rand.Read`), `RotateSessionToken`, `ValidateSession` (takes a `SessionTimeouts{Idle, Absolute}` pair), `SessionHash`, `HexSHA256`, `CSRFToken` / `VerifyCSRFToken` (bound to the session hash), `GenerateOpaqueToken` / `VerifyOpaqueToken` (password reset, email verification).
 - **Cookies:** `CookieConfig.CookieName` / `SetCookie` / `ReadCookie` / `ClearCookie`, plus the default-config free functions `SessionCookieName` / `SetSessionCookie` / `ReadSessionCookie` / `ClearSessionCookie`.
 - **API keys:** `GenerateAPIKey`, `VerifyAPIKey` (constant-time hash equality plus expiry check), `APIKeyHash`.
 - **Middleware and guards:** `New` and `NewSessionVerifier` (both return an error on an unusable config; see `CookieConfig.Validate`), `NewAPIKeyVerifier` (reads the `X-Api-Key` header only, never a URL query parameter, per CWE-598), `Authenticator.Authenticate` / `Authenticator.RequireAuth`, `HasRole` (flat RBAC), `ValidateRedirectURI` (relative paths only), `CanDisableMethod` (takes a `MethodAvailability` struct), `IsBrowserRequest`. The `WithVerifiers` / `WithActivityThrottle` / `WithUnauthorizedResponse` / `WithTimeoutSource` options are described under [Configuration](#configuration).

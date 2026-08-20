@@ -15,23 +15,26 @@ var (
 )
 
 // generateRandomHex returns n cryptographically random bytes, hex-encoded.
-func generateRandomHex(n int) (string, error) {
+//
+// It cannot fail, and so returns no error: since Go 1.24 [crypto/rand.Read] is
+// documented never to return an error — it fills its argument entirely and
+// crashes the program irrecoverably rather than reporting a failure a caller
+// could mishandle. An always-nil error here would propagate to every token
+// constructor below and invite the one fallback that must never exist in an
+// auth library: degrading to a weaker source when "randomness failed".
+func generateRandomHex(n int) string {
 	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
+	rand.Read(b) // never returns an error (Go 1.24+); it crashes instead
+	return hex.EncodeToString(b)
 }
 
 // GenerateSessionToken generates a cryptographically random session token
 // (256 bits / 32 bytes). It returns the hex-encoded plaintext token and
-// its SHA-256 hash (also hex-encoded).
-func GenerateSessionToken() (plaintext, hash string, err error) {
-	plaintext, err = generateRandomHex(32)
-	if err != nil {
-		return "", "", err
-	}
-	return plaintext, SessionHash(plaintext), nil
+// its SHA-256 hash (also hex-encoded). It cannot fail; see
+// [generateRandomHex].
+func GenerateSessionToken() (plaintext, hash string) {
+	plaintext = generateRandomHex(32)
+	return plaintext, SessionHash(plaintext)
 }
 
 // SessionTimeouts groups the idle and absolute session timeouts into one

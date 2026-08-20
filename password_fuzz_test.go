@@ -62,10 +62,7 @@ func FuzzVerifyPassword(f *testing.F) {
 	f.Add("")
 
 	f.Fuzz(func(t *testing.T, pw string) {
-		hash, err := HashPassword(pw)
-		if err != nil {
-			t.Skipf("HashPassword error: %v", err)
-		}
+		hash := HashPassword(pw)
 		ok, err := VerifyPassword(pw, hash)
 		if err != nil {
 			t.Fatalf("VerifyPassword(correct) error: %v", err)

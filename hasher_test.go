@@ -10,10 +10,7 @@ func TestHasher_DefaultParams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hash, err := h.Hash("test-password")
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash := h.Hash("test-password")
 	t.Run("verifies correct password", func(t *testing.T) {
 		ok, err := h.Verify("test-password", hash)
 		if err != nil {
@@ -47,10 +44,7 @@ func TestHasher_CustomParams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hash, err := h.Hash("custom-params")
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash := h.Hash("custom-params")
 	ok, err := h.Verify("custom-params", hash)
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +58,7 @@ func TestHasher_NeedsRehash(t *testing.T) {
 	t.Parallel()
 	p1 := Argon2Params{Memory: 2048, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
 	h1, _ := NewHasher(p1)
-	hash, _ := h1.Hash("pw")
+	hash := h1.Hash("pw")
 
 	p2 := Argon2Params{Memory: 4096, Iterations: 2, Parallelism: 1, SaltLength: 16, KeyLength: 32}
 	h2, _ := NewHasher(p2)
@@ -88,10 +82,7 @@ func TestHasher_WithPepper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hash, err := h.Hash("peppered-password")
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash := h.Hash("peppered-password")
 	t.Run("verifies with same pepper", func(t *testing.T) {
 		ok, err := h.Verify("peppered-password", hash)
 		if err != nil {
@@ -140,10 +131,7 @@ func TestHasher_CompatibleWithPackageFunctions(t *testing.T) {
 	t.Parallel()
 	// A hash created by the package-level HashPassword should be verifiable
 	// by a Hasher with default params and no pepper.
-	hash, err := HashPassword("compat-test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash := HashPassword("compat-test")
 	h, _ := NewHasher(DefaultArgon2Params())
 	ok, err := h.Verify("compat-test", hash)
 	if err != nil {
@@ -172,10 +160,7 @@ func TestHasher_differentPeppersProduceIncompatibleHashes(t *testing.T) {
 	}
 
 	const password = "correct horse battery staple"
-	hash1, err := h1.Hash(password)
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash1 := h1.Hash(password)
 
 	t.Run("verifies under its own pepper", func(t *testing.T) {
 		ok, err := h1.Verify(password, hash1)

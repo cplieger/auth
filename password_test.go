@@ -12,10 +12,7 @@ func TestProperty_PasswordHashRoundTrip(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		password := rapid.StringN(8, 128, -1).Draw(t, "password")
 
-		hash, err := HashPassword(password)
-		if err != nil {
-			t.Fatalf("HashPassword(%q) error: %v", password, err)
-		}
+		hash := HashPassword(password)
 
 		ok, err := VerifyPassword(password, hash)
 		if err != nil {
@@ -41,14 +38,8 @@ func TestProperty_UniqueSaltPerHash(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		password := rapid.StringN(1, 128, -1).Draw(t, "password")
 
-		hash1, err := HashPassword(password)
-		if err != nil {
-			t.Fatalf("HashPassword(1) error: %v", err)
-		}
-		hash2, err := HashPassword(password)
-		if err != nil {
-			t.Fatalf("HashPassword(2) error: %v", err)
-		}
+		hash1 := HashPassword(password)
+		hash2 := HashPassword(password)
 		if hash1 == hash2 {
 			t.Fatalf("two hashes identical (salt reuse)")
 		}
@@ -118,10 +109,7 @@ func TestNeedsRehash(t *testing.T) {
 	t.Parallel()
 
 	// Current params → false
-	hash, err := HashPassword("test-password")
-	if err != nil {
-		t.Fatal(err)
-	}
+	hash := HashPassword("test-password")
 	if NeedsRehash(hash) {
 		t.Error("current params should not need rehash")
 	}

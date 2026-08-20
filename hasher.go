@@ -104,18 +104,22 @@ func (h *Hasher) applyPepper(password string) []byte {
 
 // Hash hashes a password using Argon2id with the configured parameters.
 // Returns the hash in PHC string format.
-func (h *Hasher) Hash(password string) (string, error) {
+//
+// It cannot fail, and so returns no error. Its only former failure source was
+// the salt draw, and since Go 1.24 [crypto/rand.Read] never returns an error;
+// [NewHasher] has already rejected parameters that would make argon2 panic. The
+// asymmetry with [Hasher.Verify], which does return an error, is deliberate:
+// Verify parses caller-supplied input and can genuinely fail.
+func (h *Hasher) Hash(password string) string {
 	salt := make([]byte, h.params.SaltLength)
-	if _, err := rand.Read(salt); err != nil {
-		return "", fmt.Errorf("auth: generate salt: %w", err)
-	}
+	rand.Read(salt) // never returns an error (Go 1.24+); it crashes instead
 	input := h.applyPepper(password)
 	key := argon2.IDKey(input, salt, h.params.Iterations, h.params.Memory, h.params.Parallelism, h.params.KeyLength)
 	b64Salt := base64.RawStdEncoding.EncodeToString(salt)
 	b64Key := base64.RawStdEncoding.EncodeToString(key)
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version, h.params.Memory, h.params.Iterations, h.params.Parallelism,
-		b64Salt, b64Key), nil
+		b64Salt, b64Key)
 }
 
 // Verify verifies a password against an encoded Argon2id hash in PHC format.

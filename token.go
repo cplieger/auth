@@ -30,14 +30,12 @@ const (
 // RotateSessionToken generates a new session token, returning the new
 // plaintext, new hash, and old hash. The caller is responsible for
 // atomically replacing the session record in the store (delete old hash,
-// insert new hash with same session data).
-func RotateSessionToken(oldPlaintext string) (newPlaintext, newHash, oldHash string, err error) {
+// insert new hash with same session data). It cannot fail; see
+// [GenerateSessionToken].
+func RotateSessionToken(oldPlaintext string) (newPlaintext, newHash, oldHash string) {
 	oldHash = SessionHash(oldPlaintext)
-	newPlaintext, newHash, err = GenerateSessionToken()
-	if err != nil {
-		return "", "", "", err
-	}
-	return newPlaintext, newHash, oldHash, nil
+	newPlaintext, newHash = GenerateSessionToken()
+	return newPlaintext, newHash, oldHash
 }
 
 // --- CSRF Token Helpers (signed double-submit with random nonce) ---
@@ -50,9 +48,7 @@ func CSRFToken(key []byte, sessionHash string) (string, error) {
 		return "", errors.New("auth: CSRF key must not be empty")
 	}
 	nonce := make([]byte, csrfNonceLen)
-	if _, err := rand.Read(nonce); err != nil {
-		return "", err
-	}
+	rand.Read(nonce) // never returns an error (Go 1.24+); it crashes instead
 	issuedAt := make([]byte, csrfTimestampLen)
 	binary.BigEndian.PutUint64(issuedAt, uint64(time.Now().Unix())) //nolint:gosec // G115: Unix() is non-negative in practice
 
@@ -105,13 +101,10 @@ func VerifyCSRFToken(key []byte, sessionHash, token string, maxAge time.Duration
 // GenerateOpaqueToken generates a cryptographically random opaque token
 // suitable for password-reset or email-verification flows. Returns the
 // plaintext token (to send to the user) and its SHA-256 hash (to store
-// in the database).
-func GenerateOpaqueToken() (plaintext, hash string, err error) {
-	plaintext, err = generateRandomHex(32)
-	if err != nil {
-		return "", "", err
-	}
-	return plaintext, HexSHA256(plaintext), nil
+// in the database). It cannot fail; see [generateRandomHex].
+func GenerateOpaqueToken() (plaintext, hash string) {
+	plaintext = generateRandomHex(32)
+	return plaintext, HexSHA256(plaintext)
 }
 
 // VerifyOpaqueToken checks that the plaintext token matches the stored hash

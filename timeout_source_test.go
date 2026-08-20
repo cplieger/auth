@@ -23,10 +23,7 @@ func setupAgedSession(t *testing.T, age time.Duration) (*fakeSessionStore, strin
 	if err := db.CreateUser(ctx, user); err != nil {
 		t.Fatal(err)
 	}
-	plaintext, hash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash := GenerateSessionToken()
 	then := time.Now().Add(-age)
 	if err := db.CreateSession(ctx, &Session{
 		TokenHash: hash, UserID: user.ID, AuthMethod: "password",

@@ -123,10 +123,7 @@ func TestResolveUser_rejects_token_without_username_or_email(t *testing.T) {
 func TestProperty_PKCERoundTrip(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(t *rapid.T) {
-		verifier, challenge, err := GeneratePKCE()
-		if err != nil {
-			t.Fatalf("GeneratePKCE error: %v", err)
-		}
+		verifier, challenge := GeneratePKCE()
 		if verifier == "" || challenge == "" {
 			t.Fatal("empty verifier or challenge")
 		}
@@ -143,11 +140,8 @@ func TestProperty_StateGeneration(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		n := rapid.IntRange(2, 20).Draw(t, "n")
 		states := make(map[State]struct{}, n)
-		for i := range n {
-			state, err := GenerateState()
-			if err != nil {
-				t.Fatalf("GenerateState[%d] error: %v", i, err)
-			}
+		for range n {
+			state := GenerateState()
 			if len(state) != 64 {
 				t.Fatalf("state length %d, want 64", len(state))
 			}

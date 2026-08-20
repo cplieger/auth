@@ -127,10 +127,7 @@ func TestAuthenticate_session_cookie_valid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash := GenerateSessionToken()
 	now := time.Now()
 	if err := db.CreateSession(ctx, &Session{
 		TokenHash: hash, UserID: user.ID, AuthMethod: "password",
@@ -165,10 +162,7 @@ func TestAuthenticate_expired_session_falls_through(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash := GenerateSessionToken()
 	old := time.Now().Add(-25 * time.Hour)
 	if err := db.CreateSession(ctx, &Session{
 		TokenHash: hash, UserID: user.ID, AuthMethod: "password",
@@ -197,10 +191,7 @@ func TestAuthenticate_api_key_header(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash, prefix, suffix := GenerateAPIKey("ak_")
 	if err := db.CreateAPIKey(ctx, &Key{
 		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix, Label: "test",
 	}); err != nil {
@@ -240,10 +231,7 @@ func TestAuthenticate_disabled_user_session(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash := GenerateSessionToken()
 	now := time.Now()
 	if err := db.CreateSession(ctx, &Session{
 		TokenHash: hash, UserID: user.ID, AuthMethod: "password",
@@ -304,10 +292,7 @@ func TestAuthenticate_api_key_query_param_rejected(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash, prefix, suffix := GenerateAPIKey("ak_")
 	if err := db.CreateAPIKey(ctx, &Key{
 		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix, Label: "test",
 	}); err != nil {
@@ -351,10 +336,7 @@ func TestAuthenticate_disabled_user_api_key(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash, prefix, suffix := GenerateAPIKey("ak_")
 	if err := db.CreateAPIKey(ctx, &Key{
 		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix, Label: "test",
 	}); err != nil {
@@ -381,10 +363,7 @@ func TestRequireAuth_authenticated_returns_user(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash, prefix, suffix := GenerateAPIKey("ak_")
 	if err := db.CreateAPIKey(ctx, &Key{
 		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix, Label: "test",
 	}); err != nil {
@@ -427,10 +406,7 @@ func TestAuthenticate_stale_session_falls_through_to_api_key(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext, hash, prefix, suffix, err := GenerateAPIKey("ak_")
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash, prefix, suffix := GenerateAPIKey("ak_")
 	if err := db.CreateAPIKey(ctx, &Key{
 		UserID: user.ID, KeyHash: hash, KeyPrefix: prefix, KeySuffix: suffix, Label: "test",
 	}); err != nil {
@@ -499,10 +475,7 @@ func TestAuthenticator_Logger_used(t *testing.T) {
 	if err := db.CreateUser(ctx, user); err != nil {
 		t.Fatal(err)
 	}
-	plaintext, hash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash := GenerateSessionToken()
 	now := time.Now()
 	if err := db.CreateSession(ctx, &Session{
 		TokenHash: hash, UserID: user.ID, AuthMethod: "password",

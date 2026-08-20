@@ -91,26 +91,24 @@ type Provider struct {
 // results are distinct types (they are born adjacent and equally opaque), so
 // the whole chain from generation through storage to [Provider.Exchange] is
 // compiler-checked with no hand-written conversion for a caller to transpose.
-func GeneratePKCE() (CodeVerifier, CodeChallenge, error) {
+// It cannot fail: since Go 1.24 [crypto/rand.Read] never returns an error.
+func GeneratePKCE() (CodeVerifier, CodeChallenge) {
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", "", err
-	}
+	rand.Read(b) // never returns an error (Go 1.24+); it crashes instead
 	verifier := base64.RawURLEncoding.EncodeToString(b)
 	h := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(h[:])
-	return CodeVerifier(verifier), CodeChallenge(challenge), nil
+	return CodeVerifier(verifier), CodeChallenge(challenge)
 }
 
 // GenerateState generates a random state value for OIDC flows, typed at the
 // producer so it cannot be transposed with the other opaque randoms on its way
 // to [Provider.AuthorizationURL] or a consumer's [auth.OIDCStateStore].
-func GenerateState() (State, error) {
+// It cannot fail: since Go 1.24 [crypto/rand.Read] never returns an error.
+func GenerateState() State {
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return State(hex.EncodeToString(b)), nil
+	rand.Read(b) // never returns an error (Go 1.24+); it crashes instead
+	return State(hex.EncodeToString(b))
 }
 
 // oidcHTTPTimeout is the maximum time allowed for outbound OIDC HTTP calls.

@@ -48,10 +48,7 @@ func setupThrottleSession(t *testing.T) (*countingStore, string, string) {
 	if err := cs.CreateUser(ctx, user); err != nil {
 		t.Fatal(err)
 	}
-	plaintext, hash, err := GenerateSessionToken()
-	if err != nil {
-		t.Fatal(err)
-	}
+	plaintext, hash := GenerateSessionToken()
 	now := time.Now()
 	if err := cs.CreateSession(ctx, &Session{
 		TokenHash: hash, UserID: user.ID, AuthMethod: "password",

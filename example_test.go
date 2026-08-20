@@ -10,10 +10,7 @@ import (
 )
 
 func ExampleHashPassword() {
-	hash, err := auth.HashPassword("my-secure-password")
-	if err != nil {
-		panic(err)
-	}
+	hash := auth.HashPassword("my-secure-password")
 	ok, err := auth.VerifyPassword("my-secure-password", hash)
 	if err != nil {
 		panic(err)
@@ -37,19 +34,13 @@ func ExampleValidateSoloPasswordLength() {
 }
 
 func ExampleGenerateSessionToken() {
-	plaintext, hash, err := auth.GenerateSessionToken()
-	if err != nil {
-		panic(err)
-	}
+	plaintext, hash := auth.GenerateSessionToken()
 	fmt.Println(len(plaintext) == 64, len(hash) == 64, plaintext != hash)
 	// Output: true true true
 }
 
 func ExampleGenerateAPIKey() {
-	plaintext, hash, prefix, suffix, err := auth.GenerateAPIKey("ak_")
-	if err != nil {
-		panic(err)
-	}
+	plaintext, hash, prefix, suffix := auth.GenerateAPIKey("ak_")
 	fmt.Println(plaintext[:3], len(hash) == 64, len(prefix) == 8, len(suffix) == 4)
 	// Output: ak_ true true true
 }
@@ -83,7 +74,7 @@ func ExampleVerifyAPIKey() {
 		Enabled:  true,
 	})
 
-	plaintext, hash, prefix, suffix, _ := auth.GenerateAPIKey("ak_")
+	plaintext, hash, prefix, suffix := auth.GenerateAPIKey("ak_")
 	store.AddAPIKey(&auth.Key{
 		UserID:    1,
 		KeyHash:   hash,
