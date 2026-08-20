@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/http"
@@ -101,10 +102,7 @@ func DefaultCookieConfig() CookieConfig {
 // baseName returns the configured base cookie name, falling back to the
 // library default when unset.
 func (c *CookieConfig) baseName() string {
-	if c.Name == "" {
-		return CookieNameHTTP
-	}
-	return c.Name
+	return cmp.Or(c.Name, CookieNameHTTP)
 }
 
 // usesHostPrefix reports whether this posture emits a __Host--prefixed cookie
@@ -148,18 +146,12 @@ func (c *CookieConfig) requestName(r *http.Request) string {
 
 // effectivePath returns the resolved path.
 func (c *CookieConfig) effectivePath() string {
-	if c.Path != "" {
-		return c.Path
-	}
-	return "/"
+	return cmp.Or(c.Path, "/")
 }
 
 // effectiveSameSite returns the resolved SameSite mode.
 func (c *CookieConfig) effectiveSameSite() http.SameSite {
-	if c.SameSite != 0 {
-		return c.SameSite
-	}
-	return http.SameSiteLaxMode
+	return cmp.Or(c.SameSite, http.SameSiteLaxMode)
 }
 
 // isSecureCookie returns whether the Secure flag should be set based on posture.

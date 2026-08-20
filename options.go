@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -55,12 +56,8 @@ func (c *authConfig) resolveTimeouts() SessionTimeouts {
 
 // defaults applies default values to unset fields.
 func (c *authConfig) defaults() {
-	if c.idleTimeout == 0 {
-		c.idleTimeout = DefaultIdleTimeout
-	}
-	if c.absTimeout == 0 {
-		c.absTimeout = DefaultAbsTimeout
-	}
+	c.idleTimeout = cmp.Or(c.idleTimeout, DefaultIdleTimeout)
+	c.absTimeout = cmp.Or(c.absTimeout, DefaultAbsTimeout)
 }
 
 // validate reports whether the assembled configuration is usable. The
