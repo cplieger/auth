@@ -64,6 +64,7 @@ func (rec *Recorder) WithAttrs([]slog.Attr) slog.Handler { return rec }
 func (rec *Recorder) WithGroup(string) slog.Handler { return rec }
 
 // CountMsg returns how many captured records have a message containing sub.
+// Reached only by tests, like the rest of this package — see the package doc.
 func (rec *Recorder) CountMsg(sub string) int {
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
