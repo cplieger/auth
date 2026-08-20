@@ -9,26 +9,30 @@ import (
 	"testing"
 )
 
-type hibpRoundTripper struct {
-	t             *testing.T
-	server        *httptest.Server
+// hibpFake stands up the Have I Been Pwned range endpoint on httptest's
+// in-memory network (Go 1.27). The client it returns routes the hardcoded
+// https://api.pwnedpasswords.com/range/... URL that CheckBreachedPassword
+// builds straight to the handler with the Host, path and headers intact —
+// measured on go1.27.0 — which is why no rebasing RoundTripper is needed.
+//
+// The fake it replaces had to rewrite the request onto the listener's address,
+// and in doing so erased the one thing worth asserting about an outbound
+// breach check: which host the library actually contacted. The handler records
+// it, so gotHost below is a stronger assertion than the old fixture could make.
+type hibpFake struct {
 	respByPrefix  map[string]string
+	gotHost       string
+	gotPath       string
 	gotAddPadding string
 }
 
-func (rt *hibpRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	rt.t.Helper()
-	rt.gotAddPadding = req.Header.Get("Add-Padding")
-	rebased, _ := http.NewRequest(req.Method, rt.server.URL+req.URL.Path, http.NoBody)
-	rebased.Header = req.Header
-	return rt.server.Client().Do(rebased) //nolint:wrapcheck // test inspects the raw error
-}
-
-func newHibpFake(t *testing.T, respByPrefix map[string]string) *http.Client {
+func newHibpFake(t *testing.T, respByPrefix map[string]string) (*http.Client, *hibpFake) {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := r.URL.Path[len("/range/"):]
-		body, ok := respByPrefix[strings.ToUpper(key)]
+	f := &hibpFake{respByPrefix: respByPrefix}
+	srv := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.gotHost, f.gotPath = r.Host, r.URL.Path
+		f.gotAddPadding = r.Header.Get("Add-Padding")
+		body, ok := f.respByPrefix[strings.ToUpper(strings.TrimPrefix(r.URL.Path, "/range/"))]
 		if !ok {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
@@ -36,38 +40,28 @@ func newHibpFake(t *testing.T, respByPrefix map[string]string) *http.Client {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(body))
 	}))
-	t.Cleanup(srv.Close)
-	rt := &hibpRoundTripper{t: t, server: srv, respByPrefix: respByPrefix}
-	return &http.Client{Transport: rt}
-}
-
-func hibpFakeWithCapture(t *testing.T, respByPrefix map[string]string) (*http.Client, *hibpRoundTripper) {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := r.URL.Path[len("/range/"):]
-		body, ok := respByPrefix[strings.ToUpper(key)]
-		if !ok {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(body))
-	}))
-	t.Cleanup(srv.Close)
-	rt := &hibpRoundTripper{t: t, server: srv, respByPrefix: respByPrefix}
-	return &http.Client{Transport: rt}, rt
+	return srv.Client(), f
 }
 
 func TestCheckBreachedPassword_sets_add_padding_header(t *testing.T) {
 	t.Parallel()
 	hash := sha1.Sum([]byte("anything"))
 	prefix := fmt.Sprintf("%X", hash)[:5]
-	client, rt := hibpFakeWithCapture(t, map[string]string{prefix: ""})
+	client, fake := newHibpFake(t, map[string]string{prefix: ""})
 
 	_, _ = CheckBreachedPassword(t.Context(), client, "anything")
 
-	if rt.gotAddPadding != "true" {
-		t.Errorf("Add-Padding = %q, want %q", rt.gotAddPadding, "true")
+	if fake.gotAddPadding != "true" {
+		t.Errorf("Add-Padding = %q, want %q", fake.gotAddPadding, "true")
+	}
+	// The in-memory network preserves the request the library built, so the
+	// k-anonymity contract is directly observable: only the 5-hex-character
+	// prefix may leave the process, never the full SHA-1.
+	if fake.gotHost != "api.pwnedpasswords.com" {
+		t.Errorf("outbound Host = %q, want %q", fake.gotHost, "api.pwnedpasswords.com")
+	}
+	if want := "/range/" + prefix; fake.gotPath != want {
+		t.Errorf("outbound path = %q, want %q (only the 5-char prefix, never the full hash)", fake.gotPath, want)
 	}
 }
 
@@ -79,7 +73,7 @@ func TestCheckBreachedPassword_filters_zero_count_padding(t *testing.T) {
 	prefix, suffix := hexStr[:5], hexStr[5:]
 
 	body := suffix + ":0\nDEADBEEF" + strings.Repeat("0", len(suffix)-8) + ":7\n"
-	client := newHibpFake(t, map[string]string{prefix: body})
+	client, _ := newHibpFake(t, map[string]string{prefix: body})
 
 	breached, err := CheckBreachedPassword(t.Context(), client, password)
 	if err != nil {
@@ -98,7 +92,7 @@ func TestCheckBreachedPassword_real_hit(t *testing.T) {
 	prefix, suffix := hexStr[:5], hexStr[5:]
 
 	body := suffix + ":42\n"
-	client := newHibpFake(t, map[string]string{prefix: body})
+	client, _ := newHibpFake(t, map[string]string{prefix: body})
 
 	breached, err := CheckBreachedPassword(t.Context(), client, password)
 	if err != nil {
@@ -116,7 +110,7 @@ func TestCheckBreachedPassword_no_match(t *testing.T) {
 	prefix := fmt.Sprintf("%X", hash)[:5]
 
 	body := "DEADBEEFCAFE0000111122223333444455556666:5\n"
-	client := newHibpFake(t, map[string]string{prefix: body})
+	client, _ := newHibpFake(t, map[string]string{prefix: body})
 
 	breached, err := CheckBreachedPassword(t.Context(), client, password)
 	if err != nil {
@@ -174,7 +168,7 @@ func TestCheckBreachedPassword_skipsMalformedCountLine(t *testing.T) {
 	// The one line matching our suffix carries a non-numeric count, so the
 	// parser must skip it and report not-breached (never error, never breach).
 	body := suffix + ":not-a-number\n"
-	client := newHibpFake(t, map[string]string{prefix: body})
+	client, _ := newHibpFake(t, map[string]string{prefix: body})
 
 	breached, err := CheckBreachedPassword(t.Context(), client, password)
 	if err != nil {
