@@ -68,18 +68,32 @@ func TestSessionVerifier_TimeoutSource_ResolvedPerVerify(t *testing.T) {
 // TestSessionVerifier_TimeoutSource_NonPositiveFallsBackToStatic confirms
 // per-resolution validation: a source returning non-positive values must not
 // produce always-expired sessions; the static configured values apply instead.
+// Each field falls back on its own, so both the zero and the negative case are
+// exercised on each of the two durations.
 func TestSessionVerifier_TimeoutSource_NonPositiveFallsBackToStatic(t *testing.T) {
 	t.Parallel()
-	db, plaintext := setupAgedSession(t, 30*time.Minute)
+	tests := []struct {
+		name string
+		src  SessionTimeouts
+	}{
+		{"zero idle, negative absolute", SessionTimeouts{Idle: 0, Absolute: -time.Hour}},
+		{"negative idle, zero absolute", SessionTimeouts{Idle: -time.Hour, Absolute: 0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			db, plaintext := setupAgedSession(t, 30*time.Minute)
 
-	v := mustSessionVerifier(t, db,
-		WithCookie(timeoutSourceCookie),
-		WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
-		WithTimeoutSource(func() SessionTimeouts { return SessionTimeouts{Idle: 0, Absolute: -time.Hour} }))
+			v := mustSessionVerifier(t, db,
+				WithCookie(timeoutSourceCookie),
+				WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
+				WithTimeoutSource(func() SessionTimeouts { return tt.src }))
 
-	user, _, err := v.Verify(t.Context(), throttleRequest(plaintext))
-	if err != nil || user == nil {
-		t.Fatalf("Verify with non-positive source = (%v, %v), want valid via static fallback", user, err)
+			user, _, err := v.Verify(t.Context(), throttleRequest(plaintext))
+			if err != nil || user == nil {
+				t.Fatalf("Verify with source %+v = (%v, %v), want a valid session via the static fallback", tt.src, user, err)
+			}
+		})
 	}
 }
 
@@ -131,16 +145,66 @@ func TestSessionVerifier_TimeoutSource_ClampsThrottleToHalfIdle(t *testing.T) {
 			t.Fatalf("initial writes = %d, want 1", got)
 		}
 
-		// 60ms sits past the 50ms clamp but inside the raw 80ms window, so a
-		// second write here is only possible if the clamp took effect. The
+		// 30ms is inside the clamped 50ms window, so the throttle must still
+		// suppress the write.
+		synctest.Sleep(30 * time.Millisecond) // virtual time inside the bubble
+		if _, _, err := v.Verify(ctx, r); err != nil {
+			t.Fatalf("Verify error: %v", err)
+		}
+		if got := cs.count(hash); got != 1 {
+			t.Fatalf("writes after 30ms = %d, want 1 (inside the clamped 50ms window)", got)
+		}
+
+		// 60ms total sits past the 50ms clamp but inside the raw 80ms window, so
+		// a second write here is only possible if the clamp took effect. The
 		// session stays valid: write 1 refreshed LastActivity, and 60ms is
 		// within the 100ms resolved idle.
-		synctest.Sleep(60 * time.Millisecond) // virtual time inside the bubble
+		synctest.Sleep(30 * time.Millisecond)
 		if _, _, err := v.Verify(ctx, r); err != nil {
 			t.Fatalf("Verify error: %v", err)
 		}
 		if got := cs.count(hash); got != 2 {
 			t.Fatalf("writes after 60ms = %d, want 2 (clamped window 50ms elapsed)", got)
+		}
+	})
+}
+
+// TestSessionVerifier_TimeoutSource_SubWindowIdleRetainsNoThrottleState covers
+// the degenerate end of the same clamp: a resolved idle timeout of a single
+// nanosecond halves to zero, leaving no window a throttle could fit in. Every
+// request must then write, and no per-hash throttle state may be recorded — so
+// restoring a usable idle timeout writes again immediately rather than
+// suppressing the first request against a leftover entry.
+func TestSessionVerifier_TimeoutSource_SubWindowIdleRetainsNoThrottleState(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cs, plaintext, hash := setupThrottleSession(t)
+		var idle atomic.Int64
+		idle.Store(1) // 1ns: idle/2 rounds down to zero
+		v := mustSessionVerifier(t, cs,
+			WithCookie(timeoutSourceCookie),
+			WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour),
+			WithActivityThrottle(30*time.Minute),
+			WithTimeoutSource(func() SessionTimeouts {
+				return SessionTimeouts{Idle: time.Duration(idle.Load()), Absolute: 24 * time.Hour}
+			}))
+		ctx := t.Context()
+		r := throttleRequest(plaintext)
+
+		// The session was created at this same virtual instant, so a 1ns idle
+		// still accepts it and the write decision is reached.
+		if _, _, err := v.Verify(ctx, r); err != nil {
+			t.Fatalf("Verify error: %v", err)
+		}
+		if got := cs.count(hash); got != 1 {
+			t.Fatalf("writes under a 1ns resolved idle = %d, want 1", got)
+		}
+
+		idle.Store(int64(time.Hour))
+		if _, _, err := v.Verify(ctx, r); err != nil {
+			t.Fatalf("Verify error: %v", err)
+		}
+		if got := cs.count(hash); got != 2 {
+			t.Fatalf("writes after the idle timeout was restored = %d, want 2 (no throttle state was retained)", got)
 		}
 	})
 }

@@ -664,6 +664,35 @@ func TestNormalizeConfig(t *testing.T) {
 	}
 }
 
+// A non-positive limit is the one field normalizeConfig leaves as supplied, so
+// the warning is the only signal an operator gets that the limiter will block
+// every request after the first recorded attempt. Serial: it swaps the global
+// default logger.
+func TestNormalizeConfig_warns_that_a_nonpositive_limit_blocks_every_request(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	// Every other field is usable, so only the two limits can warn.
+	in := Config{
+		IPLimit:       0,
+		IPWindow:      time.Minute,
+		AcctLimit:     0,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Minute,
+		MaxEntries:    5,
+	}
+	normalizeConfig(in)
+
+	if got := strings.Count(buf.String(), "non-positive IPLimit"); got != 1 {
+		t.Errorf("normalizeConfig(%+v): IPLimit warnings = %d, want 1", in, got)
+	}
+	if got := strings.Count(buf.String(), "non-positive AcctLimit"); got != 1 {
+		t.Errorf("normalizeConfig(%+v): AcctLimit warnings = %d, want 1", in, got)
+	}
+}
+
 func TestRateLimiter_nonpositive_IPLimit_fails_closed(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
@@ -950,6 +979,79 @@ func TestRateLimiter_capWarning_rearms_after_prune_below_cap(t *testing.T) {
 
 	if got := strings.Count(buf.String(), "entry cap reached"); got != 2 {
 		t.Errorf("cap-reached warnings = %d, want 2 (warn re-arms after prune drops below cap)", got)
+	}
+}
+
+func TestRateLimiter_capWarning_stays_armed_while_prune_leaves_map_at_cap(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       10,
+		IPWindow:      time.Hour,
+		AcctLimit:     100,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    2,
+	}
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
+	rl.nowFunc = func() time.Time { return now }
+
+	// Saturate: the third key evicts and warns once.
+	rl.Record("a", "")
+	rl.Record("b", "")
+	rl.Record("c", "")
+
+	// Nothing has expired, so prune deletes nothing and the map is still
+	// exactly at the cap. The pressure has not eased, so the warning must not
+	// re-arm.
+	now = now.Add(time.Minute)
+	rl.prune()
+
+	// A fourth key evicts again within the same unbroken episode.
+	rl.Record("d", "")
+
+	if got := strings.Count(buf.String(), "entry cap reached"); got != 1 {
+		t.Errorf("cap-reached warnings = %d, want 1 (map still at the cap after prune: no re-arm)", got)
+	}
+}
+
+func TestRateLimiter_accountCapWarning_stays_armed_while_prune_leaves_map_at_cap(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := Config{
+		IPLimit:       10,
+		IPWindow:      time.Hour,
+		AcctLimit:     100,
+		AcctWindow:    time.Hour,
+		PruneInterval: time.Hour,
+		MaxEntries:    2,
+	}
+	rl := New(t.Context(), cfg)
+	defer rl.Shutdown(context.Background())
+	rl.nowFunc = func() time.Time { return now }
+
+	// The account map has its own cap-warning flag, pruned and re-armed
+	// independently of the IP map.
+	rl.Record("", "a")
+	rl.Record("", "b")
+	rl.Record("", "c")
+
+	now = now.Add(time.Minute)
+	rl.prune()
+
+	rl.Record("", "d")
+
+	if got := strings.Count(buf.String(), "entry cap reached"); got != 1 {
+		t.Errorf("cap-reached warnings = %d, want 1 (account map still at the cap after prune: no re-arm)", got)
 	}
 }
 
