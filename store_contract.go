@@ -10,11 +10,16 @@ import (
 // passkeys, API keys, and OIDC state — that a consumer's storage layer
 // implements and its HTTP handlers call. The auth library's own mechanisms
 // consume only the narrow verifier interfaces (see store_iface.go); the role
-// interfaces here mirror the library's ceremonies (UserByOIDCSub is
-// oidc.ResolveUser's lookup key, UpdatePasskeyAfterLogin is the post-login
-// credential custody, ConsumeOIDCState encodes single-use state), so a
-// storage layer implementing them end to end is equipped for every library
-// flow. Consumers needing less implement only the roles they use.
+// interfaces here mirror the library's ceremonies (UserByOIDCSub is the lookup
+// a consumer runs to fill oidc.ResolveUser's existingBySub parameter, since
+// ResolveUser maps claims onto a user the caller already fetched and performs
+// no lookup itself; UpdatePasskeyAfterLogin is the post-login credential
+// custody; ConsumeOIDCState encodes single-use state), so a storage layer
+// implementing them end to end is equipped for every library flow. That last
+// clause is a claim about what the consumer can then build, not a call-site
+// test: most members here have no caller inside this library, and a member
+// earns its place by being the store leg of a flow the library documents.
+// Consumers needing less implement only the roles they use.
 //
 // A by-key lookup reports absence through its second result, never through a
 // nil value with a nil error. Absence is a normal answer, not a failure, so it
