@@ -34,7 +34,11 @@ type SessionActivityUpdater interface {
 	UpdateSessionActivity(ctx context.Context, tokenHash string, now time.Time) error
 }
 
-// SessionStore composes read + write for middleware that needs both.
+// SessionStore is the session read+write set [github.com/cplieger/auth/v4/authtest.MemStore]
+// implements. No mechanism in this library consumes it: the library calls only
+// SessionByHash and UpdateSessionActivity (see [AuthenticatorStore]), and a
+// consumer's handler layer implements [SessionPersister] or declares the narrow
+// interface it actually calls. Scheduled for removal in v5.
 type SessionStore interface {
 	SessionReader
 	SessionWriter

@@ -57,12 +57,6 @@ func AuthenticatorStoreContractSuite(t *testing.T, newStore func(t *testing.T) A
 	})
 }
 
-// SessionStoreContractSuite is an alias for backward compatibility.
-var SessionStoreContractSuite = AuthenticatorStoreContractSuite
-
-// SessionStoreContractTest is an alias for backward compatibility.
-var SessionStoreContractTest = AuthenticatorStoreContractSuite
-
 func TestFakeSessionStore_contract(t *testing.T) {
 	t.Parallel()
 	AuthenticatorStoreContractSuite(t, func(_ *testing.T) AuthenticatorStore {

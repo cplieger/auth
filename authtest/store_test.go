@@ -8,8 +8,8 @@ import (
 	"github.com/cplieger/auth/v4/authtest"
 )
 
-func TestMemStore_implements_SessionStore(t *testing.T) {
-	var _ auth.SessionStore = authtest.NewMemStore()
+func TestMemStore_implements_AuthenticatorStore(t *testing.T) {
+	var _ auth.AuthenticatorStore = authtest.NewMemStore()
 }
 
 func TestMemStore_user_roundtrip(t *testing.T) {
