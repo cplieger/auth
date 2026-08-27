@@ -218,7 +218,7 @@ func TestCompleteLogin_ceremony_failure_returns_wrapped_error(t *testing.T) {
 		t.Fatal(err)
 	}
 	fs := &fakeStore{}
-	sess := &gowebauthn.SessionData{Challenge: "test-challenge"}
+	sess := Ceremony{data: &gowebauthn.SessionData{Challenge: "test-challenge"}}
 	r := httptest.NewRequest(http.MethodPost, "/finish", strings.NewReader("not json"))
 
 	user, cred, cerr := CompleteLogin(t.Context(), wa, fs, sess, r)

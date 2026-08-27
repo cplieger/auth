@@ -292,8 +292,55 @@ func CredentialToAPI(c *gowebauthn.Credential, userID int64, name string) *auth.
 	}
 }
 
+// RelyingParty is a configured relying party, and the value every ceremony
+// function takes. It replaces the upstream handle on this package's exported
+// surface so a consumer needs no go-webauthn import to run a ceremony; see the
+// package documentation for why that boundary is drawn here.
+//
+// Construct one with [New]. The zero value is not usable.
+type RelyingParty struct {
+	wa *gowebauthn.WebAuthn
+}
+
+// ID returns the relying party identifier ceremonies are bound to. A stored
+// credential records the ID it was registered against, so comparing the two is
+// how a relying-party rename is detected rather than silently orphaning every
+// passkey.
+func (rp *RelyingParty) ID() string {
+	return rp.wa.Config.RPID
+}
+
+// Ceremony is the server-side state of one in-flight WebAuthn ceremony: the
+// challenge and the parameters the matching Finish step verifies the
+// authenticator's response against.
+//
+// It is opaque and atomic. Hold it between the Begin and the Finish call
+// without reshaping it, keep it server-side where a client cannot modify it,
+// and discard it once the ceremony completes. A consumer's ceremony store keys
+// it by its own opaque token; [Ceremony.Expires] is the only value that store
+// needs to read.
+//
+// The value is cheap to copy and every copy refers to the same ceremony, which
+// is safe because nothing mutates one after a Begin call returns it. The zero
+// value is not a usable ceremony and reports a zero deadline, which is why a
+// ceremony lookup reports absence with a separate boolean rather than a nil.
+type Ceremony struct {
+	data *gowebauthn.SessionData
+}
+
+// Expires reports when the ceremony stops being verifiable. A ceremony store
+// evicts on this rather than tracking its own creation time, so the deadline
+// the authenticator was given and the deadline the store enforces cannot drift
+// apart.
+func (c Ceremony) Expires() time.Time {
+	if c.data == nil {
+		return time.Time{}
+	}
+	return c.data.Expires
+}
+
 // RPConfig identifies the relying party that a [New]-constructed
-// gowebauthn.WebAuthn serves. The ID and display name would otherwise sit as
+// [RelyingParty] serves. The ID and display name would otherwise sit as
 // adjacent same-typed string parameters, where a silent swap ships a broken
 // RP ID; the field names make each value's role explicit at the call site.
 type RPConfig struct {
@@ -308,16 +355,16 @@ type RPConfig struct {
 	Origins []string
 }
 
-// New creates a configured gowebauthn.WebAuthn instance for the given
-// relying party. An RPConfig with an empty ID is rejected here with an error
-// naming the field: upstream go-webauthn constructs successfully without an
-// RP ID and then fails every ceremony with an RP-hash mismatch, which defeats
-// this wrapper's purpose of making the relying party legible at construction.
-func New(rp RPConfig) (*gowebauthn.WebAuthn, error) {
+// New creates a configured [RelyingParty]. An RPConfig with an empty ID is
+// rejected here with an error naming the field: upstream go-webauthn constructs
+// successfully without an RP ID and then fails every ceremony with an RP-hash
+// mismatch, which defeats this wrapper's purpose of making the relying party
+// legible at construction.
+func New(rp RPConfig) (*RelyingParty, error) {
 	if rp.ID == "" {
 		return nil, errors.New("auth/webauthn: RPConfig.ID is required")
 	}
-	return gowebauthn.New(&gowebauthn.Config{
+	wa, err := gowebauthn.New(&gowebauthn.Config{
 		RPID:          rp.ID,
 		RPDisplayName: rp.DisplayName,
 		RPOrigins:     rp.Origins,
@@ -334,6 +381,10 @@ func New(rp RPConfig) (*gowebauthn.WebAuthn, error) {
 			},
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &RelyingParty{wa: wa}, nil
 }
 
 // ErrNotDiscoverable reports a registration whose client stated the new
@@ -349,8 +400,8 @@ var ErrNotDiscoverable = errors.New("auth/webauthn: authenticator did not create
 // algorithm produces a post-quantum credential and every authenticator in
 // current use still registers on a classical one. Verifying an ML-DSA
 // signature needs Go 1.27, which this module already requires.
-func BeginRegistration(wa *gowebauthn.WebAuthn, user *User) (*protocol.CredentialCreation, *gowebauthn.SessionData, error) {
-	return wa.BeginRegistration(user,
+func BeginRegistration(rp *RelyingParty, user *User) (*protocol.CredentialCreation, Ceremony, error) {
+	options, session, err := rp.wa.BeginRegistration(user,
 		gowebauthn.WithCredentialParameters(gowebauthn.CredentialParametersPQCRecommendedL3()),
 		gowebauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
 			ResidentKey:      protocol.ResidentKeyRequirementRequired,
@@ -359,6 +410,10 @@ func BeginRegistration(wa *gowebauthn.WebAuthn, user *User) (*protocol.Credentia
 		gowebauthn.WithExclusions(gowebauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()),
 		gowebauthn.WithExtensions(gowebauthn.WithExtensionCredProps()),
 	)
+	if err != nil {
+		return nil, Ceremony{}, err
+	}
+	return options, Ceremony{data: session}, nil
 }
 
 // FinishRegistration completes a WebAuthn registration ceremony.
@@ -370,8 +425,8 @@ func BeginRegistration(wa *gowebauthn.WebAuthn, user *User) (*protocol.Credentia
 // that fails every time they select it. The check reads the typed credProps
 // output [BeginRegistration] requests, and an authenticator that reports
 // nothing is accepted, because absence is not a denial.
-func FinishRegistration(wa *gowebauthn.WebAuthn, user *User, sessionData *gowebauthn.SessionData, response *http.Request) (*gowebauthn.Credential, error) {
-	cred, err := wa.FinishRegistration(user, *sessionData, response)
+func FinishRegistration(rp *RelyingParty, user *User, ceremony Ceremony, response *http.Request) (*gowebauthn.Credential, error) {
+	cred, err := rp.wa.FinishRegistration(user, *ceremony.data, response)
 	if err != nil {
 		return nil, err
 	}
@@ -393,23 +448,32 @@ func rejectNonDiscoverable(cred *gowebauthn.Credential) error {
 }
 
 // BeginLogin starts a WebAuthn assertion ceremony (discoverable login).
-func BeginLogin(wa *gowebauthn.WebAuthn) (*protocol.CredentialAssertion, *gowebauthn.SessionData, error) {
-	return wa.BeginDiscoverableLogin(
+func BeginLogin(rp *RelyingParty) (*protocol.CredentialAssertion, Ceremony, error) {
+	return beganCeremony(rp.wa.BeginDiscoverableLogin(
 		gowebauthn.WithUserVerification(protocol.VerificationRequired),
-	)
+	))
+}
+
+// beganCeremony wraps an upstream Begin* result so each ceremony function stays
+// a single expression rather than repeating the same four-line unwrap.
+func beganCeremony(options *protocol.CredentialAssertion, session *gowebauthn.SessionData, err error) (*protocol.CredentialAssertion, Ceremony, error) {
+	if err != nil {
+		return nil, Ceremony{}, err
+	}
+	return options, Ceremony{data: session}, nil
 }
 
 // BeginConditionalLogin starts a WebAuthn assertion ceremony with conditional
 // mediation, enabling browser autofill UI for passkeys.
-func BeginConditionalLogin(wa *gowebauthn.WebAuthn) (*protocol.CredentialAssertion, *gowebauthn.SessionData, error) {
-	return wa.BeginDiscoverableMediatedLogin(protocol.MediationConditional,
+func BeginConditionalLogin(rp *RelyingParty) (*protocol.CredentialAssertion, Ceremony, error) {
+	return beganCeremony(rp.wa.BeginDiscoverableMediatedLogin(protocol.MediationConditional,
 		gowebauthn.WithUserVerification(protocol.VerificationRequired),
-	)
+	))
 }
 
 // finishLogin completes a WebAuthn assertion ceremony (discoverable login).
-func finishLogin(wa *gowebauthn.WebAuthn, sessionData *gowebauthn.SessionData, response *http.Request, userFinder func(rawID, userHandle []byte) (gowebauthn.User, error)) (gowebauthn.User, *gowebauthn.Credential, error) {
-	return wa.FinishPasskeyLogin(userFinder, *sessionData, response)
+func finishLogin(wa *gowebauthn.WebAuthn, session *gowebauthn.SessionData, response *http.Request, userFinder func(rawID, userHandle []byte) (gowebauthn.User, error)) (gowebauthn.User, *gowebauthn.Credential, error) {
+	return wa.FinishPasskeyLogin(userFinder, *session, response)
 }
 
 // CompleteLogin completes a discoverable (passkey) login ceremony against the
@@ -426,8 +490,8 @@ func finishLogin(wa *gowebauthn.WebAuthn, sessionData *gowebauthn.SessionData, r
 // a credential deleted server-side surfaces as a wrapped
 // [protocol.ErrorUnknownCredential], matchable with errors.As so callers can
 // signal the client to forget the stale passkey.
-func CompleteLogin(ctx context.Context, wa *gowebauthn.WebAuthn, store Store, sessionData *gowebauthn.SessionData, r *http.Request) (*auth.User, *gowebauthn.Credential, error) {
-	resolved, cred, err := finishLogin(wa, sessionData, r, storeUserFinder(ctx, store))
+func CompleteLogin(ctx context.Context, rp *RelyingParty, store Store, ceremony Ceremony, r *http.Request) (*auth.User, *gowebauthn.Credential, error) {
+	resolved, cred, err := finishLogin(rp.wa, ceremony.data, r, storeUserFinder(ctx, store))
 	if err != nil {
 		return nil, nil, fmt.Errorf("webauthn: assertion ceremony failed: %w", err)
 	}

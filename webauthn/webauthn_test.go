@@ -235,8 +235,8 @@ func TestBeginRegistration_with_user(t *testing.T) {
 	if creation == nil {
 		t.Error("BeginRegistration() creation = nil, want non-nil")
 	}
-	if session == nil {
-		t.Error("BeginRegistration() session = nil, want non-nil")
+	if session.Expires().IsZero() {
+		t.Error("BeginRegistration() ceremony has a zero deadline, want a server-side one")
 	}
 }
 
@@ -468,8 +468,11 @@ func TestBeginConditionalLogin_enforces_conditional_mediation_and_uv(t *testing.
 	if err != nil {
 		t.Fatalf("BeginConditionalLogin: %v", err)
 	}
-	if assertion == nil || session == nil {
-		t.Fatal("BeginConditionalLogin returned nil assertion or session")
+	if assertion == nil {
+		t.Fatal("BeginConditionalLogin returned a nil assertion")
+	}
+	if session.Expires().IsZero() {
+		t.Error("BeginConditionalLogin() ceremony has a zero deadline, want a server-side one")
 	}
 	if assertion.Mediation != protocol.MediationConditional {
 		t.Errorf("Mediation = %q, want %q", assertion.Mediation, protocol.MediationConditional)
@@ -570,11 +573,8 @@ func TestBeginRegistration_enforces_ceremony_deadline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginRegistration: %v", err)
 	}
-	if session == nil {
-		t.Fatal("BeginRegistration returned nil session")
-	}
-	if session.Expires.IsZero() {
-		t.Error("session.Expires is zero, want a server-side ceremony deadline (Registration.Enforce must be true)")
+	if session.Expires().IsZero() {
+		t.Error("ceremony deadline is zero, want a server-side one (Registration.Enforce must be true)")
 	}
 	if got, want := creation.Response.Timeout, int(CeremonyTimeout.Milliseconds()); got != want {
 		t.Errorf("creation.Response.Timeout = %d ms, want %d ms", got, want)
@@ -630,11 +630,8 @@ func TestBeginLogin_enforces_ceremony_deadline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginLogin: %v", err)
 	}
-	if session == nil {
-		t.Fatal("BeginLogin returned nil session")
-	}
-	if session.Expires.IsZero() {
-		t.Error("session.Expires is zero, want a server-side ceremony deadline (Login.Enforce must be true)")
+	if session.Expires().IsZero() {
+		t.Error("ceremony deadline is zero, want a server-side one (Login.Enforce must be true)")
 	}
 	if got, want := assertion.Response.Timeout, int(CeremonyTimeout.Milliseconds()); got != want {
 		t.Errorf("assertion.Response.Timeout = %d ms, want %d ms", got, want)
@@ -660,9 +657,9 @@ func TestBeginRegistration_requests_credProps(t *testing.T) {
 	}
 	// The session records the request, which is what the finish step checks a
 	// returned extension output against.
-	if !slices.Contains(session.Extensions.Requested, protocol.ExtensionCredProps) {
-		t.Errorf("session.Extensions.Requested = %v, want it to contain %q",
-			session.Extensions.Requested, protocol.ExtensionCredProps)
+	if !slices.Contains(session.data.Extensions.Requested, protocol.ExtensionCredProps) {
+		t.Errorf("ceremony extensions requested = %v, want it to contain %q",
+			session.data.Extensions.Requested, protocol.ExtensionCredProps)
 	}
 }
 
