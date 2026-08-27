@@ -314,21 +314,60 @@ func New(rp RPConfig) (*gowebauthn.WebAuthn, error) {
 	})
 }
 
+// ErrNotDiscoverable reports a registration whose client stated the new
+// credential is not client-side discoverable. Matchable with errors.Is so a
+// caller can tell it apart from a verification failure and tell the user their
+// authenticator cannot store a passkey.
+var ErrNotDiscoverable = errors.New("auth/webauthn: authenticator did not create a discoverable credential")
+
 // BeginRegistration starts a WebAuthn registration ceremony.
+//
+// The credential parameters offer the three ML-DSA parameter sets ahead of
+// EdDSA, ES256 and RS256, so an authenticator that implements a post-quantum
+// algorithm produces a post-quantum credential and every authenticator in
+// current use still registers on a classical one. Verifying an ML-DSA
+// signature needs Go 1.27, which this module already requires.
 func BeginRegistration(wa *gowebauthn.WebAuthn, user *User) (*protocol.CredentialCreation, *gowebauthn.SessionData, error) {
 	return wa.BeginRegistration(user,
+		gowebauthn.WithCredentialParameters(gowebauthn.CredentialParametersPQCRecommendedL3()),
 		gowebauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
 			ResidentKey:      protocol.ResidentKeyRequirementRequired,
 			UserVerification: protocol.VerificationRequired,
 		}),
 		gowebauthn.WithExclusions(gowebauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()),
-		gowebauthn.WithExtensions(map[string]any{"credProps": true}),
+		gowebauthn.WithExtensions(gowebauthn.WithExtensionCredProps()),
 	)
 }
 
 // FinishRegistration completes a WebAuthn registration ceremony.
+//
+// A credential the client reports as non-discoverable is rejected with
+// [ErrNotDiscoverable] instead of being returned for storage. [BeginLogin] and
+// [BeginConditionalLogin] are discoverable ceremonies, so such a credential can
+// never complete a login: storing it gives the user a passkey in their list
+// that fails every time they select it. The check reads the typed credProps
+// output [BeginRegistration] requests, and an authenticator that reports
+// nothing is accepted, because absence is not a denial.
 func FinishRegistration(wa *gowebauthn.WebAuthn, user *User, sessionData *gowebauthn.SessionData, response *http.Request) (*gowebauthn.Credential, error) {
-	return wa.FinishRegistration(user, *sessionData, response)
+	cred, err := wa.FinishRegistration(user, *sessionData, response)
+	if err != nil {
+		return nil, err
+	}
+	if err := rejectNonDiscoverable(cred); err != nil {
+		return nil, err
+	}
+	return cred, nil
+}
+
+// rejectNonDiscoverable reports [ErrNotDiscoverable] when the credProps output
+// states the credential is not client-side discoverable. An absent report is
+// accepted: the client sets rk to false only when the relying party did not ask
+// for a resident key, and [BeginRegistration] always asks.
+func rejectNonDiscoverable(cred *gowebauthn.Credential) error {
+	if cred.Extensions.RK != nil && !*cred.Extensions.RK {
+		return ErrNotDiscoverable
+	}
+	return nil
 }
 
 // BeginLogin starts a WebAuthn assertion ceremony (discoverable login).

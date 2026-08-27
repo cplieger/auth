@@ -132,7 +132,7 @@ Grouped summary of the exported surface. Signatures and full semantics live in t
 - **API keys:** `GenerateAPIKey`, `VerifyAPIKey` (constant-time hash equality plus expiry check), `APIKeyHash`.
 - **Middleware and guards:** `New` and `NewSessionVerifier` (both return an error on an unusable config; see `CookieConfig.Validate`), `NewAPIKeyVerifier` (reads the `X-Api-Key` header only, never a URL query parameter, per CWE-598), `Authenticator.Authenticate` / `Authenticator.RequireAuth`, `HasRole` (flat RBAC), `ValidateRedirectURI` (relative paths only), `CanDisableMethod` (takes a `MethodAvailability` struct), `IsBrowserRequest`. The `WithVerifiers` / `WithActivityThrottle` / `WithUnauthorizedResponse` / `WithTimeoutSource` options are described under [Configuration](#configuration).
 - **Interfaces:** `CredentialVerifier` (pluggable credential verification), `AuthenticatorStore` (the composed read surface `New` takes: session, user and API-key lookup), `webauthn.Store` (consumer-implemented storage), and the persistence-SPI role interfaces `UserStore` / `SessionPersister` / `PasskeyStore` / `KeyStore` / `OIDCStateStore`. Implement the roles your handler layer needs. A by-key lookup returns a value the caller owns, so an in-memory or caching store must return a copy; a SQL-backed store satisfies this for free.
-- **WebAuthn (`github.com/cplieger/auth/v4/webauthn`):** `New` (takes an `RPConfig{ID, DisplayName, Origins}`), `NewUser`, `BeginRegistration` / `FinishRegistration` / `BeginLogin` / `FinishLogin`, `BeginConditionalLogin` (conditional mediation, autofill UI), `CompleteLogin` (store-backed login completion; the caller keeps account-status policy and session creation).
+- **WebAuthn (`github.com/cplieger/auth/v4/webauthn`):** `New` (takes an `RPConfig{ID, DisplayName, Origins}`), `NewUser`, `BeginRegistration` / `FinishRegistration` / `BeginLogin` / `FinishLogin`, `BeginConditionalLogin` (conditional mediation, autofill UI), `CompleteLogin` (store-backed login completion; the caller keeps account-status policy and session creation). Registration requires a discoverable credential with user verification, and offers the ML-DSA post-quantum algorithms ahead of EdDSA, ES256 and RS256, so an authenticator that implements one produces a post-quantum credential. `FinishRegistration` returns `ErrNotDiscoverable` for a credential the client reports as non-discoverable, because only a discoverable credential can complete `BeginLogin`.
 - **OIDC (`github.com/cplieger/auth/v4/oidc`):** `NewProvider` and `ValidateConfig` (both take an `oidc.Config`), `GenerateState`, `GeneratePKCE` (S256; both mint their results as the distinct types below), `Provider.AuthorizationURL` and `Provider.Exchange` (distinct `State` / `Nonce` / `CodeChallenge` / `Code` / `CodeVerifier` string types keep the opaque randoms from being transposed; `State`, `Nonce`, and `CodeVerifier` are aliases of the root `auth.OIDCState` / `auth.OIDCNonce` / `auth.OIDCCodeVerifier` types used by the `OIDCStateStore` SPI. AuthorizationURL rejects an empty state or code challenge and Exchange rejects an empty or mismatched nonce, both failing closed with descriptive errors, and a nonce mismatch reports `ErrNonceMismatch`), `ResolveUser` (maps an OIDC identity by issuer and subject to a user; `ErrNoUsername` when the token carries neither `preferred_username` nor `email`).
 
 ## Subpackages
@@ -175,19 +175,19 @@ store.AddUser(&auth.User{Username: "test", Role: auth.RoleUser, Enabled: true})
 
 The following features are intentionally out of scope.
 
-| Feature                                | Rationale                                                                                                                |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Full OIDC token-refresh orchestration  | Library handles authentication, not long-lived API access. Consumer uses `oauth2.TokenSource`.                           |
-| Multi-provider OIDC registry           | Consumer instantiates multiple `OIDCProvider` instances.                                                                 |
-| WebAuthn MDS verification              | Enterprise feature with large surface. Consumer can call `credential.Verify(mdsProvider)` using stored `RawAttestation`. |
-| OIDC back-channel logout               | Enterprise SSO feature beyond scope of auth-primitive library.                                                           |
-| Hierarchical RBAC / permission sets    | Library provides `HasRole` for flat role check. Use casbin/ory-keto for complex RBAC.                                    |
-| Cookie encryption/signing              | Opaque-token architecture; cookie value is a random token, not sensitive data.                                           |
-| OIDC userinfo endpoint                 | ID token claims sufficient for authentication. Consumer can call `provider.UserInfo()`.                                  |
-| WebAuthn attestation conveyance        | Default `none` is correct for most RPs per FIDO Alliance guidance.                                                       |
-| WebAuthn credential filtering (AAGUID) | Enterprise policy. Consumer can use go-webauthn's filtering directly.                                                    |
-| Passkey well-known endpoints           | Browser/credential-manager concern, not server-auth-library concern.                                                     |
-| CSRF middleware (full HTTP layer)      | Library provides `CSRFToken`/`VerifyCSRFToken` primitives; full middleware is HTTP-framework-specific.                   |
+| Feature                                | Rationale                                                                                                                                            |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full OIDC token-refresh orchestration  | Library handles authentication, not long-lived API access. Consumer uses `oauth2.TokenSource`.                                                       |
+| Multi-provider OIDC registry           | Consumer instantiates multiple `OIDCProvider` instances.                                                                                             |
+| WebAuthn MDS verification              | Enterprise feature with large surface. Consumer can call `credential.Verify(mds, attestationPolicy, signaturePolicy)` using stored `RawAttestation`. |
+| OIDC back-channel logout               | Enterprise SSO feature beyond scope of auth-primitive library.                                                                                       |
+| Hierarchical RBAC / permission sets    | Library provides `HasRole` for flat role check. Use casbin/ory-keto for complex RBAC.                                                                |
+| Cookie encryption/signing              | Opaque-token architecture; cookie value is a random token, not sensitive data.                                                                       |
+| OIDC userinfo endpoint                 | ID token claims sufficient for authentication. Consumer can call `provider.UserInfo()`.                                                              |
+| WebAuthn attestation conveyance        | Default `none` is correct for most RPs per FIDO Alliance guidance.                                                                                   |
+| WebAuthn credential filtering (AAGUID) | Enterprise policy. Consumer can use go-webauthn's filtering directly.                                                                                |
+| Passkey well-known endpoints           | Browser/credential-manager concern, not server-auth-library concern.                                                                                 |
+| CSRF middleware (full HTTP layer)      | Library provides `CSRFToken`/`VerifyCSRFToken` primitives; full middleware is HTTP-framework-specific.                                               |
 
 ## Contributing
 
