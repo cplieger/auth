@@ -14,7 +14,7 @@ import (
 	"time"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
-	"github.com/cplieger/auth/v4"
+	"github.com/cplieger/auth/v5"
 	"golang.org/x/oauth2"
 )
 

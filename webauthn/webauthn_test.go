@@ -9,8 +9,8 @@ import (
 	"testing"
 	"uuid"
 
-	"github.com/cplieger/auth/v4"
-	"github.com/cplieger/auth/v4/internal/capture"
+	"github.com/cplieger/auth/v5"
+	"github.com/cplieger/auth/v5/internal/capture"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/protocol/webauthncose"
 	gowebauthn "github.com/go-webauthn/webauthn/webauthn"

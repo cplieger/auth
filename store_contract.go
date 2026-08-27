@@ -44,7 +44,7 @@ import (
 // amount of locking inside the store can fix. A store that scans each query
 // into a fresh value satisfies this for free, which is why a SQL-backed
 // implementation cannot get it wrong; an in-memory or caching implementation
-// must copy explicitly. [github.com/cplieger/auth/v4/authtest.MemStore] is the
+// must copy explicitly. [github.com/cplieger/auth/v5/authtest.MemStore] is the
 // worked example, and its TestMemStoreIsolatesStoredValues is the shape of test
 // that pins it.
 
