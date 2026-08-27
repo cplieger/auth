@@ -61,16 +61,11 @@ func (f *fakeStore) UpdatePasskeyAfterLogin(_ context.Context, credID []byte, si
 // Compile-time assertion: the double satisfies the consumed interface.
 var _ Store = (*fakeStore)(nil)
 
-// userHandle is the handle an account that predates stored handles presents,
-// taken from the production helper rather than restated here.
-func userHandle(id int64) []byte {
-	return auth.LegacyWebAuthnHandle(id)
-}
-
 func TestStoreUserFinder_table(t *testing.T) {
 	t.Parallel()
 
-	okUser := &auth.User{ID: 7, Username: "alice", Enabled: true}
+	handle := auth.GenerateWebAuthnHandle()
+	okUser := &auth.User{ID: 7, Username: "alice", Enabled: true, WebAuthnHandle: handle}
 	tests := []struct {
 		store   *fakeStore
 		name    string
@@ -97,25 +92,25 @@ func TestStoreUserFinder_table(t *testing.T) {
 		},
 		{
 			name:    "user lookup error",
-			handle:  userHandle(7),
+			handle:  handle,
 			store:   &fakeStore{userErr: errors.New("disk on fire")},
 			wantErr: "user not found",
 		},
 		{
 			name:    "unknown user",
-			handle:  userHandle(7),
+			handle:  handle,
 			store:   &fakeStore{},
 			wantErr: "user not found",
 		},
 		{
 			name:    "passkey lookup error",
-			handle:  userHandle(7),
+			handle:  handle,
 			store:   &fakeStore{users: map[int64]*auth.User{7: okUser}, credsErr: errors.New("bucket gone")},
 			wantErr: "get passkeys failed",
 		},
 		{
 			name:   "success",
-			handle: userHandle(7),
+			handle: handle,
 			store: &fakeStore{
 				users: map[int64]*auth.User{7: okUser},
 				creds: map[int64][]auth.PasskeyCredential{7: {{CredentialID: []byte{1}, UserID: 7}}},
@@ -157,10 +152,11 @@ func TestStoreUserFinder_table(t *testing.T) {
 // message, and no internal error detail leaks into the ceremony error.
 func TestStoreUserFinder_lookup_failures_stay_generic(t *testing.T) {
 	t.Parallel()
+	handle := auth.GenerateWebAuthnHandle()
 	finder := storeUserFinder(t.Context(), &fakeStore{userErr: errors.New("pg://secret-host timeout")})
-	_, errStoreFail := finder(nil, userHandle(1))
+	_, errStoreFail := finder(nil, handle)
 	finder = storeUserFinder(t.Context(), &fakeStore{})
-	_, errMissing := finder(nil, userHandle(1))
+	_, errMissing := finder(nil, handle)
 
 	if errStoreFail == nil || errMissing == nil {
 		t.Fatal("both lookups must fail")

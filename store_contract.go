@@ -58,11 +58,11 @@ import (
 // rejects a username containing a space; see that function for the two
 // consequences worth knowing before choosing an index.
 //
-// Migrating an existing store onto this rule is not purely additive, because
-// the index key changes. Scan the stored usernames for two classes FIRST: any
-// that NormalizeUsername now rejects outright, whose owners cannot log in until
-// someone renames them, and any pair that was distinct under the old rule and
-// collides under this one, which no index rebuild can resolve by itself.
+// Adopting this rule on a store that already holds usernames changes the index
+// key, so scan the stored values for two classes first: any that
+// NormalizeUsername now rejects outright, whose owners cannot log in until
+// someone renames them, and any pair that was distinct under a plain ASCII fold
+// and collides under this one, which no index rebuild can resolve by itself.
 //
 // WEBAUTHN USER HANDLE: [User.WebAuthnHandle] identifies an account to an
 // authenticator, so a store persists it and indexes it — a discoverable login
@@ -70,13 +70,6 @@ import (
 // Set it with [GenerateWebAuthnHandle] when creating an account and never change
 // it: every passkey already registered is bound to the value in force at its
 // registration.
-//
-// Migrating a store that has no handle column: backfill each existing account
-// with [LegacyWebAuthnHandle](user.ID), which reproduces the value this library
-// derived before handles were stored, so passkeys already in the field keep
-// resolving. New accounts get a generated handle from then on. The lookup
-// tolerates a partial backfill, because an account with no stored handle falls
-// back to that same derived value.
 //
 // UserByWebAuthnHandle must not distinguish an unknown handle from a malformed
 // one. A handle is an opaque byte string with no shape to validate, and reporting

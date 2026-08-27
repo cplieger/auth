@@ -255,7 +255,7 @@ func TestSessionVerifier_updates_activity(t *testing.T) {
 
 	v := mustSessionVerifier(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: plaintext})
 
 	gotUser, _, gotErr := v.Verify(ctx, r)
 	if gotErr != nil {

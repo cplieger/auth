@@ -138,7 +138,7 @@ func TestAuthenticate_session_cookie_valid(t *testing.T) {
 
 	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/config", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: plaintext})
 
 	gotUser, gotHash, gotErr := a.Authenticate(r)
 	if gotErr != nil {
@@ -173,7 +173,7 @@ func TestAuthenticate_expired_session_falls_through(t *testing.T) {
 
 	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: plaintext})
 
 	_, _, gotErr := a.Authenticate(r)
 	if gotErr == nil {
@@ -242,7 +242,7 @@ func TestAuthenticate_disabled_user_session(t *testing.T) {
 
 	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: plaintext})
 
 	_, _, gotErr := a.Authenticate(r)
 	if !errors.Is(gotErr, ErrUnauthenticated) {
@@ -388,7 +388,7 @@ func TestAuthenticate_session_not_found_falls_through(t *testing.T) {
 	t.Parallel()
 	a := mustAuthenticator(t, newFakeSessionStore(), WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: "nonexistent-session-token"})
+	r.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: "nonexistent-session-token"})
 
 	_, _, gotErr := a.Authenticate(r)
 	if !errors.Is(gotErr, ErrUnauthenticated) {
@@ -415,7 +415,7 @@ func TestAuthenticate_stale_session_falls_through_to_api_key(t *testing.T) {
 
 	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour))
 	r, _ := http.NewRequest(http.MethodGet, "/api/search", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: "stale-session-token"})
+	r.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: "stale-session-token"})
 	r.Header.Set("X-API-Key", plaintext)
 
 	gotUser, _, gotErr := a.Authenticate(r)
@@ -486,7 +486,7 @@ func TestAuthenticator_Logger_used(t *testing.T) {
 
 	a := mustAuthenticator(t, db, WithIdleTimeout(time.Hour), WithAbsTimeout(24*time.Hour), WithLogger(logger))
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: plaintext})
 
 	if _, _, err := a.Authenticate(r); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("Authenticate(disabled user) error = %v, want ErrUnauthenticated", err)

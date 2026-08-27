@@ -102,13 +102,6 @@ type PasskeyCredential struct {
 
 	// AttestationType is the attestation type conveyed at registration
 	// ("basic_full", "basic_surrogate", "attca", "anonca", "ecdaa", "none").
-	//
-	// WARNING: a record written before this library moved to go-webauthn
-	// v0.18.0 holds an attestation FORMAT here instead, because upstream
-	// overloaded the field and this library mapped it straight through. The two
-	// vocabularies overlap only at "none", so a stored value that is not a
-	// member of the list above is a pre-v0.18.0 format identifier. Read
-	// AttestationFormat for the format.
 	AttestationType string `json:"-"`
 
 	// AttestationFormat is the attestation statement format identifier

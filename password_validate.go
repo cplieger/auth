@@ -46,9 +46,7 @@ func validatePasswordLength(password string, minLen int) error {
 // ValidateMultiFactorPasswordLength enforces minimum and maximum password
 // length for an account where the password is NOT the sole sufficient factor
 // (minimum [PasswordMinLengthMultiFactor]). Use [ValidateSoloPasswordLength]
-// when password login alone grants access. Neither arm kept the pre-v4 name,
-// so a migrating caller must choose an arm explicitly instead of silently
-// inheriting the weaker minimum.
+// when password login alone grants access.
 func ValidateMultiFactorPasswordLength(password string) error {
 	return validatePasswordLength(password, PasswordMinLengthMultiFactor)
 }
