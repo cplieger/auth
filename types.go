@@ -33,8 +33,21 @@ type User struct {
 	Role         Role      `json:"role"`
 	OIDCSub      string    `json:"-"`
 	OIDCIssuer   string    `json:"-"`
-	ID           int64     `json:"id"`
-	Enabled      bool      `json:"-"`
+
+	// WebAuthnHandle is the account's WebAuthn user handle, the value an
+	// authenticator stores to identify this account and returns during a
+	// discoverable login. Set it with [GenerateWebAuthnHandle] when creating an
+	// account, and never change it afterwards: every passkey already registered
+	// is bound to the value in force at its registration, so a new handle
+	// orphans all of them.
+	//
+	// It is deliberately not derived from any other field. An authenticator may
+	// reveal a handle without verifying the user, so it must say nothing about
+	// who the account belongs to.
+	WebAuthnHandle []byte `json:"-"`
+
+	ID      int64 `json:"id"`
+	Enabled bool  `json:"-"`
 }
 
 // Session represents a server-side authenticated session.
