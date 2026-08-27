@@ -63,6 +63,25 @@ import (
 // that NormalizeUsername now rejects outright, whose owners cannot log in until
 // someone renames them, and any pair that was distinct under the old rule and
 // collides under this one, which no index rebuild can resolve by itself.
+//
+// WEBAUTHN USER HANDLE: [User.WebAuthnHandle] identifies an account to an
+// authenticator, so a store persists it and indexes it — a discoverable login
+// arrives carrying only the handle, which is what UserByWebAuthnHandle resolves.
+// Set it with [GenerateWebAuthnHandle] when creating an account and never change
+// it: every passkey already registered is bound to the value in force at its
+// registration.
+//
+// Migrating a store that has no handle column: backfill each existing account
+// with [LegacyWebAuthnHandle](user.ID), which reproduces the value this library
+// derived before handles were stored, so passkeys already in the field keep
+// resolving. New accounts get a generated handle from then on. The lookup
+// tolerates a partial backfill, because an account with no stored handle falls
+// back to that same derived value.
+//
+// UserByWebAuthnHandle must not distinguish an unknown handle from a malformed
+// one. A handle is an opaque byte string with no shape to validate, and reporting
+// "unrecognized" differently from "no such account" would let an unauthenticated
+// caller probe which handles exist.
 
 // UserStore persists user account data.
 type UserStore interface {
@@ -71,6 +90,7 @@ type UserStore interface {
 	UserByUsername(ctx context.Context, username string) (u *User, found bool, err error)
 	UserByEmail(ctx context.Context, email string) (user *User, found bool, err error)
 	UserByOIDCSub(ctx context.Context, issuer, sub string) (user *User, found bool, err error)
+	UserByWebAuthnHandle(ctx context.Context, handle []byte) (user *User, found bool, err error)
 	ListUsers(ctx context.Context) ([]User, error)
 	UpdateUser(ctx context.Context, user *User) error
 	DeleteUser(ctx context.Context, id int64) error

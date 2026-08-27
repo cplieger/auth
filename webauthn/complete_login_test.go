@@ -1,8 +1,8 @@
 package webauthn
 
 import (
+	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -31,12 +31,19 @@ type fakeStore struct {
 	updated   *custodyRecord
 }
 
-func (f *fakeStore) UserByID(_ context.Context, id int64) (*auth.User, bool, error) {
+// UserByWebAuthnHandle resolves by handle the way a real store's index does.
+// The key comes from the production accessor rather than a restatement of it, so
+// the fake cannot index on a rule the ceremony does not use.
+func (f *fakeStore) UserByWebAuthnHandle(_ context.Context, handle []byte) (*auth.User, bool, error) {
 	if f.userErr != nil {
 		return nil, false, f.userErr
 	}
-	u, ok := f.users[id]
-	return u, ok, nil
+	for _, u := range f.users {
+		if bytes.Equal((&User{AuthUser: u}).WebAuthnID(), handle) {
+			return u, true, nil
+		}
+	}
+	return nil, false, nil
 }
 
 func (f *fakeStore) PasskeysByUserID(_ context.Context, userID int64) ([]auth.PasskeyCredential, error) {
@@ -54,11 +61,10 @@ func (f *fakeStore) UpdatePasskeyAfterLogin(_ context.Context, credID []byte, si
 // Compile-time assertion: the double satisfies the consumed interface.
 var _ Store = (*fakeStore)(nil)
 
-// userHandle encodes a user ID the way User.WebAuthnID does.
+// userHandle is the handle an account that predates stored handles presents,
+// taken from the production helper rather than restated here.
 func userHandle(id int64) []byte {
-	buf := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutVarint(buf, id)
-	return buf[:n]
+	return auth.LegacyWebAuthnHandle(id)
 }
 
 func TestStoreUserFinder_table(t *testing.T) {
@@ -72,22 +78,22 @@ func TestStoreUserFinder_table(t *testing.T) {
 		handle  []byte
 	}{
 		{
-			name:    "empty handle",
+			name:    "empty handle is indistinguishable from an unknown account",
 			handle:  nil,
 			store:   &fakeStore{},
-			wantErr: "invalid user handle",
+			wantErr: "user not found",
 		},
 		{
-			name:    "zero handle",
-			handle:  userHandle(0),
+			name:    "garbage handle is indistinguishable from an unknown account",
+			handle:  []byte{0xde, 0xad, 0xbe, 0xef},
 			store:   &fakeStore{},
-			wantErr: "invalid user handle",
+			wantErr: "user not found",
 		},
 		{
-			name:    "negative handle",
-			handle:  userHandle(-3),
+			name:    "handle of the wrong length is indistinguishable too",
+			handle:  make([]byte, auth.WebAuthnHandleSize),
 			store:   &fakeStore{},
-			wantErr: "invalid user handle",
+			wantErr: "user not found",
 		},
 		{
 			name:    "user lookup error",

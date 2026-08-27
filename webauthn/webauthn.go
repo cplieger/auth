@@ -5,7 +5,6 @@ package webauthn
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -34,7 +33,7 @@ const CeremonyTimeout = 5 * time.Minute
 type Store interface {
 	PasskeysByUserID(ctx context.Context, userID int64) ([]auth.PasskeyCredential, error)
 	UpdatePasskeyAfterLogin(ctx context.Context, credID []byte, signCount uint32, flags auth.PasskeyFlags) error
-	UserByID(ctx context.Context, id int64) (user *auth.User, found bool, err error)
+	UserByWebAuthnHandle(ctx context.Context, handle []byte) (user *auth.User, found bool, err error)
 }
 
 const (
@@ -57,11 +56,19 @@ func NewUser(user *auth.User, creds []auth.PasskeyCredential) (*User, error) {
 	return &User{AuthUser: user, Credentials: creds}, nil
 }
 
-// WebAuthnID encodes the user ID as a binary varint.
+// WebAuthnID returns the account's stored WebAuthn user handle.
+//
+// An account whose handle has not been backfilled yet falls back to the
+// derivation this library used before handles were stored, which is the same
+// value the backfill writes — so a login by an existing passkey works either
+// way, and the two can never disagree. A zero handle would violate the
+// specification's MUST NOT-be-empty rule, which is the other reason the fallback
+// is not simply an empty slice.
 func (u *User) WebAuthnID() []byte {
-	buf := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutVarint(buf, u.AuthUser.ID)
-	return buf[:n]
+	if len(u.AuthUser.WebAuthnHandle) > 0 {
+		return u.AuthUser.WebAuthnHandle
+	}
+	return auth.LegacyWebAuthnHandle(u.AuthUser.ID)
 }
 
 // WebAuthnName returns the username.
@@ -558,11 +565,7 @@ func translateAssertionError(err error) error {
 // assertion response never reveals whether a particular user handle exists.
 func storeUserFinder(ctx context.Context, store Store) func(rawID, userHandle []byte) (gowebauthn.User, error) {
 	return func(_, userHandle []byte) (gowebauthn.User, error) {
-		userID, _ := binary.Varint(userHandle)
-		if userID <= 0 {
-			return nil, errors.New("invalid user handle")
-		}
-		user, found, err := store.UserByID(ctx, userID)
+		user, found, err := store.UserByWebAuthnHandle(ctx, userHandle)
 		if err != nil || !found {
 			return nil, errors.New("user not found")
 		}

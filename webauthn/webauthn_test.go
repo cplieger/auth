@@ -2,7 +2,6 @@ package webauthn
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"slices"
 	"strings"
@@ -57,19 +56,6 @@ func TestWebAuthnUser_interface_methods(t *testing.T) {
 	}
 	if u.WebAuthnDisplayName() != "Alice Smith" {
 		t.Errorf("WebAuthnDisplayName() = %q", u.WebAuthnDisplayName())
-	}
-}
-
-func TestWebAuthnUser_WebAuthnID_encodes_varint(t *testing.T) {
-	t.Parallel()
-	u := &User{AuthUser: &auth.User{ID: 42}}
-	got := u.WebAuthnID()
-	decoded, n := binary.Varint(got)
-	if n <= 0 {
-		t.Fatal("Varint failed")
-	}
-	if decoded != 42 {
-		t.Errorf("got %d, want 42", decoded)
 	}
 }
 
