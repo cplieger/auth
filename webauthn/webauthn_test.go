@@ -3,6 +3,7 @@ package webauthn
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/cplieger/auth/v4"
 	"github.com/cplieger/auth/v4/internal/capture"
 	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/protocol/webauthncose"
 	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
 )
 
@@ -636,5 +638,98 @@ func TestBeginLogin_enforces_ceremony_deadline(t *testing.T) {
 	}
 	if got, want := assertion.Response.Timeout, int(CeremonyTimeout.Milliseconds()); got != want {
 		t.Errorf("assertion.Response.Timeout = %d ms, want %d ms", got, want)
+	}
+}
+
+// TestBeginRegistration_requests_credProps pins the credProps extension request.
+// FinishRegistration reads the credProps output to refuse a non-discoverable
+// credential, so an edit that dropped the request would silently disarm that
+// check: an authenticator reports nothing, and absence is not a denial.
+func TestBeginRegistration_requests_credProps(t *testing.T) {
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
+	creation, session, err := BeginRegistration(wa, user)
+	if err != nil {
+		t.Fatalf("BeginRegistration: %v", err)
+	}
+	if !creation.Response.Extensions.CredProps {
+		t.Error("Extensions.CredProps = false, want true")
+	}
+	// The session records the request, which is what the finish step checks a
+	// returned extension output against.
+	if !slices.Contains(session.Extensions.Requested, protocol.ExtensionCredProps) {
+		t.Errorf("session.Extensions.Requested = %v, want it to contain %q",
+			session.Extensions.Requested, protocol.ExtensionCredProps)
+	}
+}
+
+// TestBeginRegistration_offers_post_quantum_algorithms pins the ML-DSA-first
+// credential parameter list. The three post-quantum parameter sets must be
+// offered ahead of the classical algorithms so an authenticator that implements
+// one produces a post-quantum credential, and EdDSA/ES256/RS256 must remain in
+// the list so every authenticator in current use still registers.
+func TestBeginRegistration_offers_post_quantum_algorithms(t *testing.T) {
+	wa, err := New(RPConfig{ID: "example.com", DisplayName: "Example", Origins: []string{"https://example.com"}})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
+	creation, _, err := BeginRegistration(wa, user)
+	if err != nil {
+		t.Fatalf("BeginRegistration: %v", err)
+	}
+
+	got := make([]webauthncose.COSEAlgorithmIdentifier, 0, len(creation.Response.Parameters))
+	for _, p := range creation.Response.Parameters {
+		got = append(got, p.Algorithm)
+	}
+	want := []webauthncose.COSEAlgorithmIdentifier{
+		webauthncose.AlgMLDSA44, webauthncose.AlgMLDSA65, webauthncose.AlgMLDSA87,
+		webauthncose.AlgEdDSA, webauthncose.AlgES256, webauthncose.AlgRS256,
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("BeginRegistration credential parameters = %v, want %v", got, want)
+	}
+}
+
+// TestFinishRegistration_rejects_non_discoverable pins the ErrNotDiscoverable
+// gate on the credProps output. BeginLogin and BeginConditionalLogin are both
+// discoverable ceremonies, so storing a credential the client reported as
+// non-discoverable gives the user a passkey that fails every login. An absent
+// report is accepted, because absence is not a denial.
+func TestFinishRegistration_rejects_non_discoverable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		rk      *bool
+		name    string
+		wantErr bool
+	}{
+		{name: "client reports discoverable", rk: new(true), wantErr: false},
+		{name: "client reports non-discoverable", rk: new(false), wantErr: true},
+		{name: "client reports nothing", rk: nil, wantErr: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			cred := &gowebauthn.Credential{
+				ID:         []byte{1, 2, 3},
+				Extensions: gowebauthn.CredentialExtensions{RK: test.rk},
+			}
+			err := rejectNonDiscoverable(cred)
+			if gotErr := err != nil; gotErr != test.wantErr {
+				t.Fatalf("rejectNonDiscoverable(rk=%v) error = %v, want error presence %v",
+					test.rk, err, test.wantErr)
+			}
+			if test.wantErr && !errors.Is(err, ErrNotDiscoverable) {
+				t.Errorf("rejectNonDiscoverable(rk=%v) error = %v, want it to match ErrNotDiscoverable",
+					test.rk, err)
+			}
+		})
 	}
 }
