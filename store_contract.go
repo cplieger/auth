@@ -47,6 +47,22 @@ import (
 // must copy explicitly. [github.com/cplieger/auth/v5/authtest.MemStore] is the
 // worked example, and its TestMemStoreIsolatesStoredValues is the shape of test
 // that pins it.
+//
+// USERNAME IDENTITY: [NormalizeUsername] decides whether two logins are the
+// same account, and a store MUST apply it on both sides of the comparison —
+// once to build the unique-username index key, and again to the login input
+// before UserByUsername looks it up. Applying it to one side only means a user
+// who registers as "Alex" cannot log in as "alex"; applying it to neither means
+// those are two accounts. The rule is RFC 8265's UsernameCaseMapped profile
+// rather than an ASCII lowercasing, so it folds the whole of Unicode and
+// rejects a username containing a space; see that function for the two
+// consequences worth knowing before choosing an index.
+//
+// Migrating an existing store onto this rule is not purely additive, because
+// the index key changes. Scan the stored usernames for two classes FIRST: any
+// that NormalizeUsername now rejects outright, whose owners cannot log in until
+// someone renames them, and any pair that was distinct under the old rule and
+// collides under this one, which no index rebuild can resolve by itself.
 
 // UserStore persists user account data.
 type UserStore interface {
