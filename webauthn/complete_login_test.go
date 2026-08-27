@@ -135,7 +135,7 @@ func TestStoreUserFinder_table(t *testing.T) {
 			if err != nil {
 				t.Fatalf("finder error = %v, want nil", err)
 			}
-			u, ok := got.(*User)
+			u, ok := got.(*userAdapter)
 			if !ok || u.AuthUser != tc.store.users[7] {
 				t.Fatalf("finder user = %#v, want *User wrapping the stored account", got)
 			}
@@ -221,15 +221,15 @@ func TestCompleteLogin_ceremony_failure_returns_wrapped_error(t *testing.T) {
 	sess := Ceremony{data: &gowebauthn.SessionData{Challenge: "test-challenge"}}
 	r := httptest.NewRequest(http.MethodPost, "/finish", strings.NewReader("not json"))
 
-	user, cred, cerr := CompleteLogin(t.Context(), wa, fs, sess, r)
+	user, cerr := CompleteLogin(t.Context(), wa, fs, sess, r)
 	if cerr == nil {
 		t.Fatal("CompleteLogin with garbage assertion = nil error, want failure")
 	}
 	if !strings.Contains(cerr.Error(), "assertion ceremony failed") {
 		t.Errorf("error %q lacks ceremony context", cerr)
 	}
-	if user != nil || cred != nil {
-		t.Errorf("CompleteLogin returned (%v, %v) on failure, want nils", user, cred)
+	if user != nil {
+		t.Errorf("CompleteLogin returned user %v on failure, want nil", user)
 	}
 	if fs.updated != nil {
 		t.Error("custody write issued despite ceremony failure")

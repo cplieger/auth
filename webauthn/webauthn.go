@@ -77,11 +77,24 @@ func (u *User) WebAuthnDisplayName() string {
 	return u.AuthUser.Username
 }
 
+// userAdapter satisfies gowebauthn.User on behalf of [User].
+//
+// Three of the interface's four methods return first-party types and live on the
+// exported User. The fourth returns []gowebauthn.Credential, so putting it there
+// would leak an upstream type onto this package's surface for the sake of an
+// interface only this package implements. The adapter carries that one method
+// and nothing else.
+type userAdapter struct {
+	*User
+}
+
+var _ gowebauthn.User = (*userAdapter)(nil)
+
 // WebAuthnCredentials converts the stored credentials to gowebauthn.Credential.
-func (u *User) WebAuthnCredentials() []gowebauthn.Credential {
+func (u *userAdapter) WebAuthnCredentials() []gowebauthn.Credential {
 	creds := make([]gowebauthn.Credential, len(u.Credentials))
 	for i := range u.Credentials {
-		creds[i] = CredentialFromAPI(&u.Credentials[i])
+		creds[i] = credentialFromAPI(&u.Credentials[i])
 	}
 	return creds
 }
@@ -192,9 +205,9 @@ func PasskeyFriendlyName(aaguid []byte, existingNames []string) string {
 	return fmt.Sprintf("%s %d", baseName, suffix)
 }
 
-// CredentialFromAPI converts a PasskeyCredential to a gowebauthn.Credential
-// (the inverse of [CredentialToAPI]).
-func CredentialFromAPI(c *auth.PasskeyCredential) gowebauthn.Credential {
+// credentialFromAPI converts a PasskeyCredential to a gowebauthn.Credential
+// (the inverse of credentialToAPI).
+func credentialFromAPI(c *auth.PasskeyCredential) gowebauthn.Credential {
 	var transports []protocol.AuthenticatorTransport
 	if c.Transport != "" {
 		for t := range strings.SplitSeq(c.Transport, ",") {
@@ -250,8 +263,8 @@ func credentialFlags(c *auth.PasskeyCredential) gowebauthn.CredentialFlags {
 	}
 }
 
-// CredentialToAPI converts a gowebauthn.Credential to a PasskeyCredential.
-func CredentialToAPI(c *gowebauthn.Credential, userID int64, name string) *auth.PasskeyCredential {
+// credentialToAPI converts a gowebauthn.Credential to a PasskeyCredential.
+func credentialToAPI(c *gowebauthn.Credential, userID int64, name string) *auth.PasskeyCredential {
 	transports := make([]string, 0, len(c.Transport))
 	for _, t := range c.Transport {
 		transports = append(transports, string(t))
@@ -393,6 +406,18 @@ func New(rp RPConfig) (*RelyingParty, error) {
 // authenticator cannot store a passkey.
 var ErrNotDiscoverable = errors.New("auth/webauthn: authenticator did not create a discoverable credential")
 
+// ErrUnknownCredential reports a login whose asserted credential this relying
+// party has no record of, which is what a passkey deleted server-side looks
+// like from the client's side. Matchable with errors.Is, so a caller can tell it
+// apart from a verification failure and signal the client to forget the stale
+// passkey rather than telling the user their sign-in failed.
+//
+// It is a translation of the upstream condition, not a wrapper around it: the
+// upstream error is deliberately NOT in this error's chain, so a caller cannot
+// reach go-webauthn's type through it and grow a dependency on this package's
+// internals. A test pins that.
+var ErrUnknownCredential = errors.New("auth/webauthn: the asserted credential is not registered")
+
 // BeginRegistration starts a WebAuthn registration ceremony.
 //
 // The credential parameters offer the three ML-DSA parameter sets ahead of
@@ -401,13 +426,13 @@ var ErrNotDiscoverable = errors.New("auth/webauthn: authenticator did not create
 // current use still registers on a classical one. Verifying an ML-DSA
 // signature needs Go 1.27, which this module already requires.
 func BeginRegistration(rp *RelyingParty, user *User) (*CredentialCreation, Ceremony, error) {
-	options, session, err := rp.wa.BeginRegistration(user,
+	options, session, err := rp.wa.BeginRegistration(&userAdapter{User: user},
 		gowebauthn.WithCredentialParameters(gowebauthn.CredentialParametersPQCRecommendedL3()),
 		gowebauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
 			ResidentKey:      protocol.ResidentKeyRequirementRequired,
 			UserVerification: protocol.VerificationRequired,
 		}),
-		gowebauthn.WithExclusions(gowebauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()),
+		gowebauthn.WithExclusions(gowebauthn.Credentials((&userAdapter{User: user}).WebAuthnCredentials()).CredentialDescriptors()),
 		gowebauthn.WithExtensions(gowebauthn.WithExtensionCredProps()),
 	)
 	if err != nil {
@@ -425,15 +450,25 @@ func BeginRegistration(rp *RelyingParty, user *User) (*CredentialCreation, Cerem
 // that fails every time they select it. The check reads the typed credProps
 // output [BeginRegistration] requests, and an authenticator that reports
 // nothing is accepted, because absence is not a denial.
-func FinishRegistration(rp *RelyingParty, user *User, ceremony Ceremony, response *http.Request) (*gowebauthn.Credential, error) {
-	cred, err := rp.wa.FinishRegistration(user, *ceremony.data, response)
+func FinishRegistration(rp *RelyingParty, user *User, ceremony Ceremony, response *http.Request) (*auth.PasskeyCredential, error) {
+	cred, err := rp.wa.FinishRegistration(&userAdapter{User: user}, *ceremony.data, response)
 	if err != nil {
 		return nil, err
 	}
 	if err := rejectNonDiscoverable(cred); err != nil {
 		return nil, err
 	}
-	return cred, nil
+	return registrationRecord(rp, user, cred), nil
+}
+
+// registrationRecord builds the stored credential record for a completed
+// registration. The Name is left empty: a friendly name is derived from the
+// AAGUID against the user's EXISTING passkey names (see [PasskeyFriendlyName]),
+// which only the caller's store can supply.
+func registrationRecord(rp *RelyingParty, user *User, cred *gowebauthn.Credential) *auth.PasskeyCredential {
+	record := credentialToAPI(cred, user.AuthUser.ID, "")
+	record.RPID = rp.ID()
+	return record
 }
 
 // rejectNonDiscoverable reports [ErrNotDiscoverable] when the credProps output
@@ -490,19 +525,31 @@ func finishLogin(wa *gowebauthn.WebAuthn, session *gowebauthn.SessionData, respo
 // a credential deleted server-side surfaces as a wrapped
 // [protocol.ErrorUnknownCredential], matchable with errors.As so callers can
 // signal the client to forget the stale passkey.
-func CompleteLogin(ctx context.Context, rp *RelyingParty, store Store, ceremony Ceremony, r *http.Request) (*auth.User, *gowebauthn.Credential, error) {
+func CompleteLogin(ctx context.Context, rp *RelyingParty, store Store, ceremony Ceremony, r *http.Request) (*auth.User, error) {
 	resolved, cred, err := finishLogin(rp.wa, ceremony.data, r, storeUserFinder(ctx, store))
 	if err != nil {
-		return nil, nil, fmt.Errorf("webauthn: assertion ceremony failed: %w", err)
+		return nil, translateAssertionError(err)
 	}
-	user, ok := resolved.(*User)
+	user, ok := resolved.(*userAdapter)
 	if !ok || user.AuthUser == nil {
-		// Unreachable with storeUserFinder (which only returns *User), kept as
-		// a fail-closed guard against upstream contract drift.
-		return nil, nil, errors.New("webauthn: ceremony resolved an unexpected user type")
+		// Unreachable with storeUserFinder (which only returns *userAdapter),
+		// kept as a fail-closed guard against upstream contract drift.
+		return nil, errors.New("webauthn: ceremony resolved an unexpected user type")
 	}
 	persistLoginCustody(ctx, store, cred)
-	return user.AuthUser, cred, nil
+	return user.AuthUser, nil
+}
+
+// translateAssertionError converts an upstream ceremony failure into this
+// package's own vocabulary. The unknown-credential case is TRANSLATED rather
+// than wrapped: [ErrUnknownCredential] is returned on its own, so the upstream
+// error is not reachable through the result and a caller cannot come to depend
+// on go-webauthn's error types. Every other failure keeps its cause.
+func translateAssertionError(err error) error {
+	if _, ok := errors.AsType[*protocol.ErrorUnknownCredential](err); ok {
+		return ErrUnknownCredential
+	}
+	return fmt.Errorf("webauthn: assertion ceremony failed: %w", err)
 }
 
 // storeUserFinder returns the credential-lookup callback the assertion
@@ -523,7 +570,11 @@ func storeUserFinder(ctx context.Context, store Store) func(rawID, userHandle []
 		if err != nil {
 			return nil, errors.New("get passkeys failed")
 		}
-		return NewUser(user, creds)
+		u, err := NewUser(user, creds)
+		if err != nil {
+			return nil, errors.New("user not found")
+		}
+		return &userAdapter{User: u}, nil
 	}
 }
 

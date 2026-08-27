@@ -67,7 +67,7 @@ func FuzzCredentialFromAPI(f *testing.F) {
 			CloneWarning:   flagBits&16 != 0,
 		}
 
-		got := CredentialFromAPI(cred)
+		got := credentialFromAPI(cred)
 
 		if got.Flags.BackupEligible != cred.BackupEligible {
 			t.Errorf("BackupEligible = %v, want %v", got.Flags.BackupEligible, cred.BackupEligible)
