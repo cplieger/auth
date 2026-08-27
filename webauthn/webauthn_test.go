@@ -93,7 +93,7 @@ func TestCredentialFromAPI_table(t *testing.T) {
 				Transport: tt.transport, SignCount: 42,
 				BackupEligible: true, UserPresent: true, UserVerified: true,
 			}
-			got := CredentialFromAPI(cred)
+			got := credentialFromAPI(cred)
 			if len(got.Transport) != tt.wantTransports {
 				t.Errorf("transport count = %d, want %d", len(got.Transport), tt.wantTransports)
 			}
@@ -126,7 +126,7 @@ func TestWebAuthnCredentialToAPI_table(t *testing.T) {
 					AAGUID: make([]byte, 16), SignCount: 99,
 				},
 			}
-			got := CredentialToAPI(waCred, 7, "test-key")
+			got := credentialToAPI(waCred, 7, "test-key")
 			if got.Transport != tt.wantTransport {
 				t.Errorf("Transport = %q, want %q", got.Transport, tt.wantTransport)
 			}
@@ -167,7 +167,7 @@ func TestCredentialFromAPI_corrupted_attestation(t *testing.T) {
 		AAGUID:         make([]byte, 16),
 		RawAttestation: []byte("not valid json"),
 	}
-	got := CredentialFromAPI(cred)
+	got := credentialFromAPI(cred)
 	if !bytes.Equal(got.ID, []byte{1}) {
 		t.Errorf("CredentialID mismatch after corrupted attestation")
 	}
@@ -182,11 +182,11 @@ func TestCloneWarning_roundtrip(t *testing.T) {
 		SignCount:    10,
 		CloneWarning: true,
 	}
-	waCred := CredentialFromAPI(cred)
+	waCred := credentialFromAPI(cred)
 	if !waCred.Authenticator.CloneWarning {
 		t.Error("CredentialFromAPI did not propagate CloneWarning")
 	}
-	back := CredentialToAPI(&waCred, 1, "test")
+	back := credentialToAPI(&waCred, 1, "test")
 	if !back.CloneWarning {
 		t.Error("CredentialToAPI did not propagate CloneWarning")
 	}
@@ -322,14 +322,14 @@ func TestCredentialToAPI_RawAttestation_presence(t *testing.T) {
 			waCred.Attestation.Object = tt.object
 			waCred.Attestation.ClientDataJSON = tt.clientDataJSON
 
-			got := CredentialToAPI(waCred, 7, "key")
+			got := credentialToAPI(waCred, 7, "key")
 
 			if tt.wantNil && got.RawAttestation != nil {
-				t.Errorf("CredentialToAPI(Object=%v, ClientDataJSON=%v).RawAttestation = %v, want nil",
+				t.Errorf("credentialToAPI(Object=%v, ClientDataJSON=%v).RawAttestation = %v, want nil",
 					tt.object, tt.clientDataJSON, got.RawAttestation)
 			}
 			if !tt.wantNil && got.RawAttestation == nil {
-				t.Errorf("CredentialToAPI(Object=%v, ClientDataJSON=%v).RawAttestation = nil, want non-nil",
+				t.Errorf("credentialToAPI(Object=%v, ClientDataJSON=%v).RawAttestation = nil, want non-nil",
 					tt.object, tt.clientDataJSON)
 			}
 		})
@@ -343,12 +343,12 @@ func TestCredentialFromAPI_restores_attestation_from_raw(t *testing.T) {
 
 	src := &gowebauthn.Credential{ID: []byte{9}, PublicKey: []byte{8}}
 	src.Attestation.Object = []byte{0xa0, 0x01, 0x02}
-	apiCred := CredentialToAPI(src, 1, "key")
+	apiCred := credentialToAPI(src, 1, "key")
 	if len(apiCred.RawAttestation) == 0 {
 		t.Fatal("setup: expected non-empty RawAttestation from CredentialToAPI")
 	}
 
-	got := CredentialFromAPI(apiCred)
+	got := credentialFromAPI(apiCred)
 
 	if !bytes.Equal(got.Attestation.Object, []byte{0xa0, 0x01, 0x02}) {
 		t.Errorf("CredentialFromAPI restored Attestation.Object = %v, want %v",
@@ -367,10 +367,10 @@ func TestCredentialFromAPI_empty_raw_attestation_no_warning(t *testing.T) {
 		AAGUID:       make([]byte, 16),
 	}
 
-	_ = CredentialFromAPI(cred)
+	_ = credentialFromAPI(cred)
 
 	if n := h.CountMsg("corrupted attestation"); n != 0 {
-		t.Errorf("CredentialFromAPI(empty RawAttestation) logged %d corrupted-attestation warnings, want 0", n)
+		t.Errorf("credentialFromAPI(empty RawAttestation) logged %d corrupted-attestation warnings, want 0", n)
 	}
 }
 
@@ -386,10 +386,10 @@ func TestCredentialFromAPI_invalid_raw_attestation_warns(t *testing.T) {
 		RawAttestation: []byte("not valid json"),
 	}
 
-	_ = CredentialFromAPI(cred)
+	_ = credentialFromAPI(cred)
 
 	if n := h.CountMsg("corrupted attestation"); n != 1 {
-		t.Errorf("CredentialFromAPI(invalid RawAttestation) logged %d corrupted-attestation warnings, want 1", n)
+		t.Errorf("credentialFromAPI(invalid RawAttestation) logged %d corrupted-attestation warnings, want 1", n)
 	}
 }
 
@@ -434,7 +434,7 @@ func TestWebAuthnCredentials_converts_all(t *testing.T) {
 			{CredentialID: []byte{3}, PublicKey: []byte{4}, AAGUID: make([]byte, 16), Transport: "usb,nfc"},
 		},
 	}
-	got := u.WebAuthnCredentials()
+	got := (&userAdapter{User: u}).WebAuthnCredentials()
 	if len(got) != 2 {
 		t.Fatalf("WebAuthnCredentials() len = %d, want 2", len(got))
 	}

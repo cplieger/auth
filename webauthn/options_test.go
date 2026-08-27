@@ -23,10 +23,10 @@ func TestCreationOptions_serializesLikeUpstream(t *testing.T) {
 	rp := testRelyingParty(t)
 	user := &User{AuthUser: &auth.User{ID: 42, Username: "alex", DisplayName: "Alex"}}
 
-	upstream, _, err := rp.wa.BeginRegistration(user,
+	upstream, _, err := rp.wa.BeginRegistration(&userAdapter{User: user},
 		gowebauthn.WithCredentialParameters(gowebauthn.CredentialParametersPQCRecommendedL3()),
 		gowebauthn.WithAuthenticatorSelection(upstreamSelection()),
-		gowebauthn.WithExclusions(gowebauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()),
+		gowebauthn.WithExclusions(gowebauthn.Credentials((&userAdapter{User: user}).WebAuthnCredentials()).CredentialDescriptors()),
 		gowebauthn.WithExtensions(gowebauthn.WithExtensionCredProps()),
 	)
 	if err != nil {
@@ -88,10 +88,10 @@ func TestCreationOptions_serializesLikeUpstream_withExcludedCredential(t *testin
 		},
 	}
 
-	upstream, _, err := rp.wa.BeginRegistration(user,
+	upstream, _, err := rp.wa.BeginRegistration(&userAdapter{User: user},
 		gowebauthn.WithCredentialParameters(gowebauthn.CredentialParametersPQCRecommendedL3()),
 		gowebauthn.WithAuthenticatorSelection(upstreamSelection()),
-		gowebauthn.WithExclusions(gowebauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()),
+		gowebauthn.WithExclusions(gowebauthn.Credentials((&userAdapter{User: user}).WebAuthnCredentials()).CredentialDescriptors()),
 		gowebauthn.WithExtensions(gowebauthn.WithExtensionCredProps()),
 	)
 	if err != nil {

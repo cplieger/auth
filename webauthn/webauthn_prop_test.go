@@ -37,8 +37,8 @@ func TestAPICredentialRoundTrip_preserves_fields(t *testing.T) {
 			Discoverable:      &discoverable,
 		}
 
-		wa := CredentialFromAPI(orig)
-		got := CredentialToAPI(&wa, orig.UserID, orig.Name)
+		wa := credentialFromAPI(orig)
+		got := credentialToAPI(&wa, orig.UserID, orig.Name)
 
 		if !bytes.Equal(got.CredentialID, orig.CredentialID) {
 			t.Errorf("CredentialID = %x, want %x", got.CredentialID, orig.CredentialID)
@@ -108,8 +108,8 @@ func TestAPICredentialRoundTrip_recordWithoutRawFlags(t *testing.T) {
 			UserVerified:   rapid.Bool().Draw(t, "userVerified"),
 		}
 
-		wa := CredentialFromAPI(orig)
-		got := CredentialToAPI(&wa, orig.UserID, orig.Name)
+		wa := credentialFromAPI(orig)
+		got := credentialToAPI(&wa, orig.UserID, orig.Name)
 
 		if got.BackupEligible != orig.BackupEligible {
 			t.Errorf("BackupEligible = %v, want %v", got.BackupEligible, orig.BackupEligible)
