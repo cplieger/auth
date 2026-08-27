@@ -400,7 +400,7 @@ var ErrNotDiscoverable = errors.New("auth/webauthn: authenticator did not create
 // algorithm produces a post-quantum credential and every authenticator in
 // current use still registers on a classical one. Verifying an ML-DSA
 // signature needs Go 1.27, which this module already requires.
-func BeginRegistration(rp *RelyingParty, user *User) (*protocol.CredentialCreation, Ceremony, error) {
+func BeginRegistration(rp *RelyingParty, user *User) (*CredentialCreation, Ceremony, error) {
 	options, session, err := rp.wa.BeginRegistration(user,
 		gowebauthn.WithCredentialParameters(gowebauthn.CredentialParametersPQCRecommendedL3()),
 		gowebauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
@@ -413,7 +413,7 @@ func BeginRegistration(rp *RelyingParty, user *User) (*protocol.CredentialCreati
 	if err != nil {
 		return nil, Ceremony{}, err
 	}
-	return options, Ceremony{data: session}, nil
+	return creationFromUpstream(options, user.WebAuthnID()), Ceremony{data: session}, nil
 }
 
 // FinishRegistration completes a WebAuthn registration ceremony.
@@ -448,7 +448,7 @@ func rejectNonDiscoverable(cred *gowebauthn.Credential) error {
 }
 
 // BeginLogin starts a WebAuthn assertion ceremony (discoverable login).
-func BeginLogin(rp *RelyingParty) (*protocol.CredentialAssertion, Ceremony, error) {
+func BeginLogin(rp *RelyingParty) (*CredentialAssertion, Ceremony, error) {
 	return beganCeremony(rp.wa.BeginDiscoverableLogin(
 		gowebauthn.WithUserVerification(protocol.VerificationRequired),
 	))
@@ -456,16 +456,16 @@ func BeginLogin(rp *RelyingParty) (*protocol.CredentialAssertion, Ceremony, erro
 
 // beganCeremony wraps an upstream Begin* result so each ceremony function stays
 // a single expression rather than repeating the same four-line unwrap.
-func beganCeremony(options *protocol.CredentialAssertion, session *gowebauthn.SessionData, err error) (*protocol.CredentialAssertion, Ceremony, error) {
+func beganCeremony(options *protocol.CredentialAssertion, session *gowebauthn.SessionData, err error) (*CredentialAssertion, Ceremony, error) {
 	if err != nil {
 		return nil, Ceremony{}, err
 	}
-	return options, Ceremony{data: session}, nil
+	return assertionFromUpstream(options), Ceremony{data: session}, nil
 }
 
 // BeginConditionalLogin starts a WebAuthn assertion ceremony with conditional
 // mediation, enabling browser autofill UI for passkeys.
-func BeginConditionalLogin(rp *RelyingParty) (*protocol.CredentialAssertion, Ceremony, error) {
+func BeginConditionalLogin(rp *RelyingParty) (*CredentialAssertion, Ceremony, error) {
 	return beganCeremony(rp.wa.BeginDiscoverableMediatedLogin(protocol.MediationConditional,
 		gowebauthn.WithUserVerification(protocol.VerificationRequired),
 	))

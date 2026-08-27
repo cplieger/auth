@@ -251,8 +251,8 @@ func TestBeginRegistration_requires_user_verification(t *testing.T) {
 		t.Fatalf("BeginRegistration: %v", err)
 	}
 	uv := creation.Response.AuthenticatorSelection.UserVerification
-	if uv != protocol.VerificationRequired {
-		t.Errorf("UserVerification = %q, want %q", uv, protocol.VerificationRequired)
+	if uv != VerificationRequired {
+		t.Errorf("UserVerification = %q, want %q", uv, VerificationRequired)
 	}
 }
 
@@ -272,8 +272,8 @@ func TestBeginRegistration_requires_resident_key(t *testing.T) {
 		t.Fatalf("BeginRegistration: %v", err)
 	}
 	rk := creation.Response.AuthenticatorSelection.ResidentKey
-	if rk != protocol.ResidentKeyRequirementRequired {
-		t.Errorf("ResidentKey = %q, want %q", rk, protocol.ResidentKeyRequirementRequired)
+	if rk != ResidentKeyRequired {
+		t.Errorf("ResidentKey = %q, want %q", rk, ResidentKeyRequired)
 	}
 }
 
@@ -287,8 +287,8 @@ func TestBeginLogin_requires_user_verification(t *testing.T) {
 		t.Fatalf("BeginLogin: %v", err)
 	}
 	uv := assertion.Response.UserVerification
-	if uv != protocol.VerificationRequired {
-		t.Errorf("UserVerification = %q, want %q", uv, protocol.VerificationRequired)
+	if uv != VerificationRequired {
+		t.Errorf("UserVerification = %q, want %q", uv, VerificationRequired)
 	}
 }
 
@@ -474,11 +474,11 @@ func TestBeginConditionalLogin_enforces_conditional_mediation_and_uv(t *testing.
 	if session.Expires().IsZero() {
 		t.Error("BeginConditionalLogin() ceremony has a zero deadline, want a server-side one")
 	}
-	if assertion.Mediation != protocol.MediationConditional {
-		t.Errorf("Mediation = %q, want %q", assertion.Mediation, protocol.MediationConditional)
+	if assertion.Mediation != MediationConditional {
+		t.Errorf("Mediation = %q, want %q", assertion.Mediation, MediationConditional)
 	}
-	if uv := assertion.Response.UserVerification; uv != protocol.VerificationRequired {
-		t.Errorf("UserVerification = %q, want %q", uv, protocol.VerificationRequired)
+	if uv := assertion.Response.UserVerification; uv != VerificationRequired {
+		t.Errorf("UserVerification = %q, want %q", uv, VerificationRequired)
 	}
 }
 
@@ -603,15 +603,15 @@ func TestBeginRegistration_excludes_existing_credentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginRegistration: %v", err)
 	}
-	excludeList := creation.Response.CredentialExcludeList
+	excludeList := creation.Response.ExcludeCredentials
 	if len(excludeList) != 2 {
-		t.Fatalf("CredentialExcludeList len = %d, want 2", len(excludeList))
+		t.Fatalf("ExcludeCredentials len = %d, want 2", len(excludeList))
 	}
-	if !bytes.Equal(excludeList[0].CredentialID, []byte{1, 2, 3}) {
-		t.Errorf("CredentialExcludeList[0].CredentialID = %x, want 010203", excludeList[0].CredentialID)
+	if !bytes.Equal(excludeList[0].ID, []byte{1, 2, 3}) {
+		t.Errorf("ExcludeCredentials[0].ID = %x, want 010203", excludeList[0].ID)
 	}
-	if !bytes.Equal(excludeList[1].CredentialID, []byte{4, 5, 6}) {
-		t.Errorf("CredentialExcludeList[1].CredentialID = %x, want 040506", excludeList[1].CredentialID)
+	if !bytes.Equal(excludeList[1].ID, []byte{4, 5, 6}) {
+		t.Errorf("ExcludeCredentials[1].ID = %x, want 040506", excludeList[1].ID)
 	}
 }
 
@@ -679,13 +679,13 @@ func TestBeginRegistration_offers_post_quantum_algorithms(t *testing.T) {
 		t.Fatalf("BeginRegistration: %v", err)
 	}
 
-	got := make([]webauthncose.COSEAlgorithmIdentifier, 0, len(creation.Response.Parameters))
+	got := make([]COSEAlgorithm, 0, len(creation.Response.Parameters))
 	for _, p := range creation.Response.Parameters {
 		got = append(got, p.Algorithm)
 	}
-	want := []webauthncose.COSEAlgorithmIdentifier{
-		webauthncose.AlgMLDSA44, webauthncose.AlgMLDSA65, webauthncose.AlgMLDSA87,
-		webauthncose.AlgEdDSA, webauthncose.AlgES256, webauthncose.AlgRS256,
+	want := []COSEAlgorithm{
+		COSEAlgorithm(webauthncose.AlgMLDSA44), COSEAlgorithm(webauthncose.AlgMLDSA65), COSEAlgorithm(webauthncose.AlgMLDSA87),
+		COSEAlgorithm(webauthncose.AlgEdDSA), COSEAlgorithm(webauthncose.AlgES256), COSEAlgorithm(webauthncose.AlgRS256),
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("BeginRegistration credential parameters = %v, want %v", got, want)
