@@ -133,8 +133,17 @@ type PasskeyCredential struct {
 	SignCount uint32 `json:"-"`
 
 	// RawFlags is the authenticator-data flags octet as conveyed at
-	// registration. The booleans below are the four bits this library acts on;
-	// the octet preserves the rest (AT, ED) which no accessor exposes.
+	// registration, and it is the ONLY flag input this library reads. The
+	// booleans below are a decoded view for a consumer to display or filter on;
+	// nothing here reads them back, so a store that persists them and drops the
+	// octet loses the flags. The octet also preserves the bits the booleans do
+	// not (AT, ED), which no accessor exposes.
+	//
+	// A store MUST persist it. A real registration always sets user presence,
+	// so a zero octet on a stored credential means the store did not record it,
+	// and the flags it restores are all false — which go-webauthn refuses at
+	// the next login when the authenticator asserts backup eligibility (see
+	// the PASSKEY FLAGS note in store_contract.go).
 	RawFlags uint8 `json:"-"`
 
 	BackupEligible bool `json:"backup_eligible"`

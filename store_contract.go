@@ -75,6 +75,19 @@ import (
 // one. A handle is an opaque byte string with no shape to validate, and reporting
 // "unrecognized" differently from "no such account" would let an unauthenticated
 // caller probe which handles exist.
+//
+// PASSKEY FLAGS: [PasskeyCredential.RawFlags] is a REQUIRED field, and it is the
+// only flag input this library reads. The four booleans beside it are a decoded
+// view for display and filtering, so a store that persists those and drops the
+// octet restores every credential with all-false flags. That is not a silent
+// downgrade: go-webauthn compares the stored backup-eligible flag against the
+// one the authenticator asserts and refuses the assertion when they disagree,
+// and every synced passkey asserts it, so dropping the octet fails the login.
+//
+// A store that already holds rows without the octet can rebuild it from the
+// booleans it did keep — user presence is bit 0, user verification bit 2,
+// backup eligibility bit 3, backup state bit 4. Only the AT and ED bits are
+// unrecoverable, and nothing reads those for a decision.
 
 // UserStore persists user account data.
 type UserStore interface {
