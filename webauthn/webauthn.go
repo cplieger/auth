@@ -29,7 +29,7 @@ const CeremonyTimeout = 5 * time.Minute
 // credential lookup to resolve the asserting account from its user handle,
 // and the post-login credential-custody write. A storage layer implementing
 // [auth.UserStore] and [auth.PasskeyStore] satisfies it. Consumers composing
-// the lower-level ceremony helpers ([BeginLogin], [FinishLogin]) with their
+// the lower-level ceremony helpers ([BeginLogin], [BeginConditionalLogin]) with their
 // own user finder do not need it.
 type Store interface {
 	PasskeysByUserID(ctx context.Context, userID int64) ([]auth.PasskeyCredential, error)
@@ -385,8 +385,8 @@ func BeginConditionalLogin(wa *gowebauthn.WebAuthn) (*protocol.CredentialAsserti
 	)
 }
 
-// FinishLogin completes a WebAuthn assertion ceremony (discoverable login).
-func FinishLogin(wa *gowebauthn.WebAuthn, sessionData *gowebauthn.SessionData, response *http.Request, userFinder func(rawID, userHandle []byte) (gowebauthn.User, error)) (gowebauthn.User, *gowebauthn.Credential, error) {
+// finishLogin completes a WebAuthn assertion ceremony (discoverable login).
+func finishLogin(wa *gowebauthn.WebAuthn, sessionData *gowebauthn.SessionData, response *http.Request, userFinder func(rawID, userHandle []byte) (gowebauthn.User, error)) (gowebauthn.User, *gowebauthn.Credential, error) {
 	return wa.FinishPasskeyLogin(userFinder, *sessionData, response)
 }
 
@@ -394,9 +394,7 @@ func FinishLogin(wa *gowebauthn.WebAuthn, sessionData *gowebauthn.SessionData, r
 // store: it resolves the asserting user and registered credentials from the
 // assertion's user handle, verifies the assertion response, and persists the
 // post-login credential custody (sign count and authenticator flags, the
-// cloned-authenticator detection state). It composes [FinishLogin] with a
-// store-backed user finder; a consumer needing a custom finder or custody
-// policy uses FinishLogin directly.
+// cloned-authenticator detection state).
 //
 // The custody write is best-effort: a store failure is logged at Warn and does
 // not fail the login (sign-count bookkeeping is clone *detection*, not part of
@@ -407,7 +405,7 @@ func FinishLogin(wa *gowebauthn.WebAuthn, sessionData *gowebauthn.SessionData, r
 // [protocol.ErrorUnknownCredential], matchable with errors.As so callers can
 // signal the client to forget the stale passkey.
 func CompleteLogin(ctx context.Context, wa *gowebauthn.WebAuthn, store Store, sessionData *gowebauthn.SessionData, r *http.Request) (*auth.User, *gowebauthn.Credential, error) {
-	resolved, cred, err := FinishLogin(wa, sessionData, r, storeUserFinder(ctx, store))
+	resolved, cred, err := finishLogin(wa, sessionData, r, storeUserFinder(ctx, store))
 	if err != nil {
 		return nil, nil, fmt.Errorf("webauthn: assertion ceremony failed: %w", err)
 	}

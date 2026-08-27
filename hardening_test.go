@@ -202,11 +202,6 @@ func TestRoleInterface_SessionWriter(t *testing.T) {
 	var _ SessionWriter = newFakeSessionStore()
 }
 
-func TestRoleInterface_SessionStore(t *testing.T) {
-	t.Parallel()
-	var _ SessionStore = newFakeSessionStore()
-}
-
 func TestRoleInterface_UserReader(t *testing.T) {
 	t.Parallel()
 	var _ UserReader = newFakeSessionStore()
