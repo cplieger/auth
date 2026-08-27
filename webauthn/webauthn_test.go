@@ -618,7 +618,7 @@ func TestBeginRegistration_excludes_existing_credentials(t *testing.T) {
 // TestBeginLogin_enforces_ceremony_deadline pins the Enforce:true posture for the
 // login ceremony. New sets Login.Enforce, so BeginLogin's SessionData
 // carries a non-zero server-side Expires deadline (go-webauthn rejects an expired
-// assertion at FinishLogin). go-webauthn leaves Enforce false by default, so
+// assertion at CompleteLogin). go-webauthn leaves Enforce false by default, so
 // removing the Timeouts block from New would zero Expires and fail this
 // test. The advisory timeout echoed to the client equals CeremonyTimeout.
 func TestBeginLogin_enforces_ceremony_deadline(t *testing.T) {
