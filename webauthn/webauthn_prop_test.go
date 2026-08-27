@@ -10,25 +10,31 @@ import (
 
 // TestAPICredentialRoundTrip_preserves_fields asserts that converting a
 // PasskeyCredential to a gowebauthn.Credential and back preserves every scalar
-// field and all five authenticator flags. BackupEligible, BackupState, and
-// UserVerified drive credential-trust decisions, so a conversion that silently
-// dropped or swapped a flag would weaken authentication while the existing
-// spot-check tests (which assert only UserPresent and CloneWarning) stayed green.
+// field of the credential record. BackupEligible, BackupState and UserVerified
+// drive credential-trust decisions, so a conversion that silently dropped or
+// swapped one would weaken authentication while the spot-check tests (which
+// assert only UserPresent and CloneWarning) stayed green.
+//
+// The flags travel as the raw octet, which is authoritative, so the four
+// booleans are asserted against what that octet implies rather than against
+// what was drawn. The legacy path where no octet was stored is the property
+// below.
 func TestAPICredentialRoundTrip_preserves_fields(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(t *rapid.T) {
+		discoverable := rapid.Bool().Draw(t, "discoverable")
 		orig := &auth.PasskeyCredential{
-			CredentialID:    rapid.SliceOf(rapid.Byte()).Draw(t, "credID"),
-			PublicKey:       rapid.SliceOf(rapid.Byte()).Draw(t, "pubKey"),
-			AAGUID:          rapid.SliceOf(rapid.Byte()).Draw(t, "aaguid"),
-			AttestationType: rapid.String().Draw(t, "attestationType"),
-			Transport:       rapid.String().Draw(t, "transport"),
-			SignCount:       rapid.Uint32().Draw(t, "signCount"),
-			BackupEligible:  rapid.Bool().Draw(t, "backupEligible"),
-			BackupState:     rapid.Bool().Draw(t, "backupState"),
-			UserPresent:     rapid.Bool().Draw(t, "userPresent"),
-			UserVerified:    rapid.Bool().Draw(t, "userVerified"),
-			CloneWarning:    rapid.Bool().Draw(t, "cloneWarning"),
+			CredentialID:      rapid.SliceOf(rapid.Byte()).Draw(t, "credID"),
+			PublicKey:         rapid.SliceOf(rapid.Byte()).Draw(t, "pubKey"),
+			AAGUID:            rapid.SliceOf(rapid.Byte()).Draw(t, "aaguid"),
+			AttestationType:   rapid.String().Draw(t, "attestationType"),
+			AttestationFormat: rapid.String().Draw(t, "attestationFormat"),
+			Attachment:        auth.AuthenticatorAttachment(rapid.String().Draw(t, "attachment")),
+			Transport:         rapid.String().Draw(t, "transport"),
+			SignCount:         rapid.Uint32().Draw(t, "signCount"),
+			RawFlags:          rapid.Uint8Range(1, 255).Draw(t, "rawFlags"),
+			CloneWarning:      rapid.Bool().Draw(t, "cloneWarning"),
+			Discoverable:      &discoverable,
 		}
 
 		wa := CredentialFromAPI(orig)
@@ -46,12 +52,65 @@ func TestAPICredentialRoundTrip_preserves_fields(t *testing.T) {
 		if got.AttestationType != orig.AttestationType {
 			t.Errorf("AttestationType = %q, want %q", got.AttestationType, orig.AttestationType)
 		}
+		if got.AttestationFormat != orig.AttestationFormat {
+			t.Errorf("AttestationFormat = %q, want %q", got.AttestationFormat, orig.AttestationFormat)
+		}
+		if got.Attachment != orig.Attachment {
+			t.Errorf("Attachment = %q, want %q", got.Attachment, orig.Attachment)
+		}
 		if got.Transport != orig.Transport {
 			t.Errorf("Transport = %q, want %q", got.Transport, orig.Transport)
 		}
 		if got.SignCount != orig.SignCount {
 			t.Errorf("SignCount = %d, want %d", got.SignCount, orig.SignCount)
 		}
+		if got.RawFlags != orig.RawFlags {
+			t.Errorf("RawFlags = %#08b, want %#08b", got.RawFlags, orig.RawFlags)
+		}
+		if got.CloneWarning != orig.CloneWarning {
+			t.Errorf("CloneWarning = %v, want %v", got.CloneWarning, orig.CloneWarning)
+		}
+		if got.Discoverable == nil || *got.Discoverable != discoverable {
+			t.Errorf("Discoverable = %v, want %v", got.Discoverable, discoverable)
+		}
+
+		// The four booleans are the bits of the octet that travelled.
+		flags := wa.Flags
+		if got.UserPresent != flags.UserPresent {
+			t.Errorf("UserPresent = %v, want %v (RawFlags %#08b)", got.UserPresent, flags.UserPresent, orig.RawFlags)
+		}
+		if got.UserVerified != flags.UserVerified {
+			t.Errorf("UserVerified = %v, want %v (RawFlags %#08b)", got.UserVerified, flags.UserVerified, orig.RawFlags)
+		}
+		if got.BackupEligible != flags.BackupEligible {
+			t.Errorf("BackupEligible = %v, want %v (RawFlags %#08b)", got.BackupEligible, flags.BackupEligible, orig.RawFlags)
+		}
+		if got.BackupState != flags.BackupState {
+			t.Errorf("BackupState = %v, want %v (RawFlags %#08b)", got.BackupState, flags.BackupState, orig.RawFlags)
+		}
+	})
+}
+
+// TestAPICredentialRoundTrip_recordWithoutRawFlags is the other branch of the
+// flag discriminator: a record written before RawFlags existed carries a zero
+// octet and valid booleans, and converting it must keep those booleans rather
+// than deriving four falses from the absent octet. Getting this wrong would
+// silently reset BackupEligible and UserVerified on every stored passkey.
+func TestAPICredentialRoundTrip_recordWithoutRawFlags(t *testing.T) {
+	t.Parallel()
+	rapid.Check(t, func(t *rapid.T) {
+		orig := &auth.PasskeyCredential{
+			CredentialID:   rapid.SliceOf(rapid.Byte()).Draw(t, "credID"),
+			RawFlags:       0,
+			BackupEligible: rapid.Bool().Draw(t, "backupEligible"),
+			BackupState:    rapid.Bool().Draw(t, "backupState"),
+			UserPresent:    rapid.Bool().Draw(t, "userPresent"),
+			UserVerified:   rapid.Bool().Draw(t, "userVerified"),
+		}
+
+		wa := CredentialFromAPI(orig)
+		got := CredentialToAPI(&wa, orig.UserID, orig.Name)
+
 		if got.BackupEligible != orig.BackupEligible {
 			t.Errorf("BackupEligible = %v, want %v", got.BackupEligible, orig.BackupEligible)
 		}
@@ -63,9 +122,6 @@ func TestAPICredentialRoundTrip_preserves_fields(t *testing.T) {
 		}
 		if got.UserVerified != orig.UserVerified {
 			t.Errorf("UserVerified = %v, want %v", got.UserVerified, orig.UserVerified)
-		}
-		if got.CloneWarning != orig.CloneWarning {
-			t.Errorf("CloneWarning = %v, want %v", got.CloneWarning, orig.CloneWarning)
 		}
 	})
 }

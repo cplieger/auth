@@ -203,21 +203,19 @@ func CredentialFromAPI(c *auth.PasskeyCredential) gowebauthn.Credential {
 	}
 
 	cred := gowebauthn.Credential{
-		ID:              c.CredentialID,
-		PublicKey:       c.PublicKey,
-		AttestationType: c.AttestationType,
-		Transport:       transports,
-		Flags: gowebauthn.CredentialFlags{
-			UserPresent:    c.UserPresent,
-			UserVerified:   c.UserVerified,
-			BackupEligible: c.BackupEligible,
-			BackupState:    c.BackupState,
-		},
+		ID:                c.CredentialID,
+		PublicKey:         c.PublicKey,
+		AttestationType:   c.AttestationType,
+		AttestationFormat: c.AttestationFormat,
+		Transport:         transports,
+		Flags:             credentialFlags(c),
 		Authenticator: gowebauthn.Authenticator{
 			AAGUID:       c.AAGUID,
 			SignCount:    c.SignCount,
 			CloneWarning: c.CloneWarning,
+			Attachment:   protocol.AuthenticatorAttachment(c.Attachment),
 		},
+		Extensions: gowebauthn.CredentialExtensions{RK: c.Discoverable},
 	}
 
 	if len(c.RawAttestation) > 0 {
@@ -230,6 +228,26 @@ func CredentialFromAPI(c *auth.PasskeyCredential) gowebauthn.Credential {
 	}
 
 	return cred
+}
+
+// credentialFlags rebuilds the upstream flag set from a stored credential.
+//
+// A record written by this library carries the raw octet, which is
+// authoritative and preserves the bits the four booleans do not (AT, ED), so it
+// is preferred. A record written before RawFlags existed holds a zero there and
+// valid booleans, and a zero octet cannot be a real registration — user
+// presence is required, so the UP bit is always set — which makes zero a sound
+// discriminator rather than an ambiguous default.
+func credentialFlags(c *auth.PasskeyCredential) gowebauthn.CredentialFlags {
+	if c.RawFlags != 0 {
+		return gowebauthn.NewCredentialFlags(protocol.AuthenticatorFlags(c.RawFlags))
+	}
+	return gowebauthn.CredentialFlags{
+		UserPresent:    c.UserPresent,
+		UserVerified:   c.UserVerified,
+		BackupEligible: c.BackupEligible,
+		BackupState:    c.BackupState,
+	}
 }
 
 // CredentialToAPI converts a gowebauthn.Credential to a PasskeyCredential.
@@ -253,20 +271,24 @@ func CredentialToAPI(c *gowebauthn.Credential, userID int64, name string) *auth.
 	}
 
 	return &auth.PasskeyCredential{
-		UserID:          userID,
-		CredentialID:    c.ID,
-		PublicKey:       c.PublicKey,
-		AAGUID:          c.Authenticator.AAGUID,
-		AttestationType: c.AttestationType,
-		Transport:       strings.Join(transports, ","),
-		SignCount:       c.Authenticator.SignCount,
-		Name:            name,
-		BackupEligible:  c.Flags.BackupEligible,
-		BackupState:     c.Flags.BackupState,
-		UserPresent:     c.Flags.UserPresent,
-		UserVerified:    c.Flags.UserVerified,
-		CloneWarning:    c.Authenticator.CloneWarning,
-		RawAttestation:  rawAttestation,
+		UserID:            userID,
+		CredentialID:      c.ID,
+		PublicKey:         c.PublicKey,
+		AAGUID:            c.Authenticator.AAGUID,
+		AttestationType:   c.AttestationType,
+		AttestationFormat: c.AttestationFormat,
+		Attachment:        auth.AuthenticatorAttachment(c.Authenticator.Attachment),
+		Transport:         strings.Join(transports, ","),
+		SignCount:         c.Authenticator.SignCount,
+		Name:              name,
+		RawFlags:          uint8(c.Flags.ProtocolValue()),
+		BackupEligible:    c.Flags.BackupEligible,
+		BackupState:       c.Flags.BackupState,
+		UserPresent:       c.Flags.UserPresent,
+		UserVerified:      c.Flags.UserVerified,
+		CloneWarning:      c.Authenticator.CloneWarning,
+		Discoverable:      c.Extensions.RK,
+		RawAttestation:    rawAttestation,
 	}
 }
 
