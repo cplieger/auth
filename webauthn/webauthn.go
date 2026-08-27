@@ -58,17 +58,12 @@ func NewUser(user *auth.User, creds []auth.PasskeyCredential) (*User, error) {
 
 // WebAuthnID returns the account's stored WebAuthn user handle.
 //
-// An account whose handle has not been backfilled yet falls back to the
-// derivation this library used before handles were stored, which is the same
-// value the backfill writes — so a login by an existing passkey works either
-// way, and the two can never disagree. A zero handle would violate the
-// specification's MUST NOT-be-empty rule, which is the other reason the fallback
-// is not simply an empty slice.
+// The store sets it with [auth.GenerateWebAuthnHandle] at account creation and
+// never changes it; every passkey is bound to the value in force at its
+// registration. An empty handle violates the specification's MUST NOT-be-empty
+// rule, so a store that returns one is misconfigured.
 func (u *User) WebAuthnID() []byte {
-	if len(u.AuthUser.WebAuthnHandle) > 0 {
-		return u.AuthUser.WebAuthnHandle
-	}
-	return auth.LegacyWebAuthnHandle(u.AuthUser.ID)
+	return u.AuthUser.WebAuthnHandle
 }
 
 // WebAuthnName returns the username.
@@ -250,24 +245,11 @@ func credentialFromAPI(c *auth.PasskeyCredential) gowebauthn.Credential {
 	return cred
 }
 
-// credentialFlags rebuilds the upstream flag set from a stored credential.
-//
-// A record written by this library carries the raw octet, which is
-// authoritative and preserves the bits the four booleans do not (AT, ED), so it
-// is preferred. A record written before RawFlags existed holds a zero there and
-// valid booleans, and a zero octet cannot be a real registration — user
-// presence is required, so the UP bit is always set — which makes zero a sound
-// discriminator rather than an ambiguous default.
+// credentialFlags rebuilds the upstream flag set from the stored raw octet,
+// which is authoritative and preserves the AT and ED bits that the four decoded
+// booleans drop.
 func credentialFlags(c *auth.PasskeyCredential) gowebauthn.CredentialFlags {
-	if c.RawFlags != 0 {
-		return gowebauthn.NewCredentialFlags(protocol.AuthenticatorFlags(c.RawFlags))
-	}
-	return gowebauthn.CredentialFlags{
-		UserPresent:    c.UserPresent,
-		UserVerified:   c.UserVerified,
-		BackupEligible: c.BackupEligible,
-		BackupState:    c.BackupState,
-	}
+	return gowebauthn.NewCredentialFlags(protocol.AuthenticatorFlags(c.RawFlags))
 }
 
 // credentialToAPI converts a gowebauthn.Credential to a PasskeyCredential.

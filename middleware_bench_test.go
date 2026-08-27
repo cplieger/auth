@@ -35,7 +35,7 @@ func BenchmarkAuthenticate(b *testing.B) {
 
 	b.Run("session_cookie", func(b *testing.B) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/test", nil)
-		req.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: token})
+		req.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: token})
 		b.ReportAllocs()
 		for b.Loop() {
 			_, _, _ = auth.Authenticate(req)

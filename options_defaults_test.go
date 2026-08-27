@@ -67,7 +67,7 @@ func TestNewSessionVerifier_NoOptions_SessionValid(t *testing.T) {
 	// Use NO timeout options — defaults must keep 5-minute-old session valid
 	v := mustSessionVerifier(t, db)
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: plaintext})
 
 	gotUser, _, gotErr := v.Verify(ctx, r)
 	if gotErr != nil {
@@ -104,7 +104,7 @@ func TestNew_NoOptions_SessionValid(t *testing.T) {
 
 	a := mustAuthenticator(t, db) // NO options
 	r, _ := http.NewRequest(http.MethodGet, "/api/data", nil)
-	r.AddCookie(&http.Cookie{Name: CookieNameSecure, Value: plaintext})
+	r.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: plaintext})
 
 	gotUser, gotHash, gotErr := a.Authenticate(r)
 	if gotErr != nil {

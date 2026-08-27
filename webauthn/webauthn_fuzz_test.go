@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/cplieger/auth/v5"
+	"github.com/go-webauthn/webauthn/protocol"
 )
 
 var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
@@ -45,6 +46,10 @@ func FuzzFormatAAGUID(f *testing.F) {
 // asserts the decoder is total (never panics) and that attestation contents can
 // never leak into the authenticator flags or identity fields. Complements the
 // every-PR rapid round-trip property with a persistent coverage-guided corpus.
+//
+// The flags travel as the stored raw octet, so each decoded boolean is asserted
+// against the specification's bit position for it. That pins the mapping itself:
+// a swap between two flags would otherwise be invisible.
 func FuzzCredentialFromAPI(f *testing.F) {
 	f.Add([]byte(nil), "", uint32(0), uint8(0))
 	f.Add([]byte("not valid json"), "usb", uint32(1), uint8(0xff))
@@ -60,26 +65,23 @@ func FuzzCredentialFromAPI(f *testing.F) {
 			Transport:      transport,
 			SignCount:      signCount,
 			RawAttestation: raw,
-			BackupEligible: flagBits&1 != 0,
-			BackupState:    flagBits&2 != 0,
-			UserPresent:    flagBits&4 != 0,
-			UserVerified:   flagBits&8 != 0,
+			RawFlags:       flagBits,
 			CloneWarning:   flagBits&16 != 0,
 		}
 
 		got := credentialFromAPI(cred)
 
-		if got.Flags.BackupEligible != cred.BackupEligible {
-			t.Errorf("BackupEligible = %v, want %v", got.Flags.BackupEligible, cred.BackupEligible)
+		if want := flagBits&uint8(protocol.FlagUserPresent) != 0; got.Flags.UserPresent != want {
+			t.Errorf("UserPresent = %v, want %v (RawFlags %#08b)", got.Flags.UserPresent, want, flagBits)
 		}
-		if got.Flags.BackupState != cred.BackupState {
-			t.Errorf("BackupState = %v, want %v", got.Flags.BackupState, cred.BackupState)
+		if want := flagBits&uint8(protocol.FlagUserVerified) != 0; got.Flags.UserVerified != want {
+			t.Errorf("UserVerified = %v, want %v (RawFlags %#08b)", got.Flags.UserVerified, want, flagBits)
 		}
-		if got.Flags.UserPresent != cred.UserPresent {
-			t.Errorf("UserPresent = %v, want %v", got.Flags.UserPresent, cred.UserPresent)
+		if want := flagBits&uint8(protocol.FlagBackupEligible) != 0; got.Flags.BackupEligible != want {
+			t.Errorf("BackupEligible = %v, want %v (RawFlags %#08b)", got.Flags.BackupEligible, want, flagBits)
 		}
-		if got.Flags.UserVerified != cred.UserVerified {
-			t.Errorf("UserVerified = %v, want %v", got.Flags.UserVerified, cred.UserVerified)
+		if want := flagBits&uint8(protocol.FlagBackupState) != 0; got.Flags.BackupState != want {
+			t.Errorf("BackupState = %v, want %v (RawFlags %#08b)", got.Flags.BackupState, want, flagBits)
 		}
 		if got.Authenticator.CloneWarning != cred.CloneWarning {
 			t.Errorf("CloneWarning = %v, want %v", got.Authenticator.CloneWarning, cred.CloneWarning)

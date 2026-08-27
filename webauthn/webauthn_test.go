@@ -77,7 +77,7 @@ func TestCredentialFromAPI_table(t *testing.T) {
 				CredentialID: []byte{1, 2, 3}, PublicKey: []byte{4, 5, 6},
 				AAGUID: make([]byte, 16), AttestationType: "none",
 				Transport: tt.transport, SignCount: 42,
-				BackupEligible: true, UserPresent: true, UserVerified: true,
+				RawFlags: uint8(protocol.FlagUserPresent | protocol.FlagUserVerified | protocol.FlagBackupEligible),
 			}
 			got := credentialFromAPI(cred)
 			if len(got.Transport) != tt.wantTransports {
@@ -213,7 +213,7 @@ func TestBeginRegistration_with_user(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
+	user := &User{AuthUser: &auth.User{ID: 1, Username: "test", WebAuthnHandle: auth.GenerateWebAuthnHandle()}}
 	creation, session, err := BeginRegistration(wa, user)
 	if err != nil {
 		t.Fatalf("BeginRegistration error: %v", err)
@@ -231,7 +231,7 @@ func TestBeginRegistration_requires_user_verification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
+	user := &User{AuthUser: &auth.User{ID: 1, Username: "test", WebAuthnHandle: auth.GenerateWebAuthnHandle()}}
 	creation, _, err := BeginRegistration(wa, user)
 	if err != nil {
 		t.Fatalf("BeginRegistration: %v", err)
@@ -252,7 +252,7 @@ func TestBeginRegistration_requires_resident_key(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
+	user := &User{AuthUser: &auth.User{ID: 1, Username: "test", WebAuthnHandle: auth.GenerateWebAuthnHandle()}}
 	creation, _, err := BeginRegistration(wa, user)
 	if err != nil {
 		t.Fatalf("BeginRegistration: %v", err)
@@ -554,7 +554,7 @@ func TestBeginRegistration_enforces_ceremony_deadline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
+	user := &User{AuthUser: &auth.User{ID: 1, Username: "test", WebAuthnHandle: auth.GenerateWebAuthnHandle()}}
 	creation, session, err := BeginRegistration(wa, user)
 	if err != nil {
 		t.Fatalf("BeginRegistration: %v", err)
@@ -579,7 +579,7 @@ func TestBeginRegistration_excludes_existing_credentials(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	user := &User{
-		AuthUser: &auth.User{ID: 1, Username: "test"},
+		AuthUser: &auth.User{ID: 1, Username: "test", WebAuthnHandle: auth.GenerateWebAuthnHandle()},
 		Credentials: []auth.PasskeyCredential{
 			{CredentialID: []byte{1, 2, 3}, PublicKey: []byte{9}, AAGUID: make([]byte, 16)},
 			{CredentialID: []byte{4, 5, 6}, PublicKey: []byte{9}, AAGUID: make([]byte, 16)},
@@ -633,7 +633,7 @@ func TestBeginRegistration_requests_credProps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
+	user := &User{AuthUser: &auth.User{ID: 1, Username: "test", WebAuthnHandle: auth.GenerateWebAuthnHandle()}}
 	creation, session, err := BeginRegistration(wa, user)
 	if err != nil {
 		t.Fatalf("BeginRegistration: %v", err)
@@ -659,7 +659,7 @@ func TestBeginRegistration_offers_post_quantum_algorithms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	user := &User{AuthUser: &auth.User{ID: 1, Username: "test"}}
+	user := &User{AuthUser: &auth.User{ID: 1, Username: "test", WebAuthnHandle: auth.GenerateWebAuthnHandle()}}
 	creation, _, err := BeginRegistration(wa, user)
 	if err != nil {
 		t.Fatalf("BeginRegistration: %v", err)

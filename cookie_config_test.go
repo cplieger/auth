@@ -7,6 +7,10 @@ import (
 	"testing"
 )
 
+// defaultSecureCookieName is the cookie name the default (PostureSecure) config
+// emits: the __Host- prefix on the default base name.
+const defaultSecureCookieName = "__Host-" + defaultCookieName
+
 func TestCookieConfig_Defaults(t *testing.T) {
 	t.Parallel()
 	cfg := DefaultCookieConfig()

@@ -21,7 +21,7 @@ import (
 func TestCreationOptions_serializesLikeUpstream(t *testing.T) {
 	t.Parallel()
 	rp := testRelyingParty(t)
-	user := &User{AuthUser: &auth.User{ID: 42, Username: "alex", DisplayName: "Alex"}}
+	user := &User{AuthUser: &auth.User{ID: 42, Username: "alex", DisplayName: "Alex", WebAuthnHandle: auth.GenerateWebAuthnHandle()}}
 
 	upstream, _, err := rp.wa.BeginRegistration(&userAdapter{User: user},
 		gowebauthn.WithCredentialParameters(gowebauthn.CredentialParametersPQCRecommendedL3()),
@@ -81,7 +81,7 @@ func TestCreationOptions_serializesLikeUpstream_withExcludedCredential(t *testin
 	t.Parallel()
 	rp := testRelyingParty(t)
 	user := &User{
-		AuthUser: &auth.User{ID: 42, Username: "alex", DisplayName: "Alex"},
+		AuthUser: &auth.User{ID: 42, Username: "alex", DisplayName: "Alex", WebAuthnHandle: auth.GenerateWebAuthnHandle()},
 		Credentials: []auth.PasskeyCredential{
 			{CredentialID: []byte{1, 2, 3}, Transport: "internal,hybrid"},
 			{CredentialID: []byte{4, 5, 6}, Transport: "usb"},

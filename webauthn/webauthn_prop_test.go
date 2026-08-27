@@ -17,8 +17,7 @@ import (
 //
 // The flags travel as the raw octet, which is authoritative, so the four
 // booleans are asserted against what that octet implies rather than against
-// what was drawn. The legacy path where no octet was stored is the property
-// below.
+// what was drawn.
 func TestAPICredentialRoundTrip_preserves_fields(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(t *rapid.T) {
@@ -87,41 +86,6 @@ func TestAPICredentialRoundTrip_preserves_fields(t *testing.T) {
 		}
 		if got.BackupState != flags.BackupState {
 			t.Errorf("BackupState = %v, want %v (RawFlags %#08b)", got.BackupState, flags.BackupState, orig.RawFlags)
-		}
-	})
-}
-
-// TestAPICredentialRoundTrip_recordWithoutRawFlags is the other branch of the
-// flag discriminator: a record written before RawFlags existed carries a zero
-// octet and valid booleans, and converting it must keep those booleans rather
-// than deriving four falses from the absent octet. Getting this wrong would
-// silently reset BackupEligible and UserVerified on every stored passkey.
-func TestAPICredentialRoundTrip_recordWithoutRawFlags(t *testing.T) {
-	t.Parallel()
-	rapid.Check(t, func(t *rapid.T) {
-		orig := &auth.PasskeyCredential{
-			CredentialID:   rapid.SliceOf(rapid.Byte()).Draw(t, "credID"),
-			RawFlags:       0,
-			BackupEligible: rapid.Bool().Draw(t, "backupEligible"),
-			BackupState:    rapid.Bool().Draw(t, "backupState"),
-			UserPresent:    rapid.Bool().Draw(t, "userPresent"),
-			UserVerified:   rapid.Bool().Draw(t, "userVerified"),
-		}
-
-		wa := credentialFromAPI(orig)
-		got := credentialToAPI(&wa, orig.UserID, orig.Name)
-
-		if got.BackupEligible != orig.BackupEligible {
-			t.Errorf("BackupEligible = %v, want %v", got.BackupEligible, orig.BackupEligible)
-		}
-		if got.BackupState != orig.BackupState {
-			t.Errorf("BackupState = %v, want %v", got.BackupState, orig.BackupState)
-		}
-		if got.UserPresent != orig.UserPresent {
-			t.Errorf("UserPresent = %v, want %v", got.UserPresent, orig.UserPresent)
-		}
-		if got.UserVerified != orig.UserVerified {
-			t.Errorf("UserVerified = %v, want %v", got.UserVerified, orig.UserVerified)
 		}
 	})
 }

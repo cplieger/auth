@@ -83,17 +83,14 @@ type CookieConfig struct {
 	TrustForwardedHeaders bool
 }
 
-// Legacy constants for backward compatibility.
-const (
-	CookieNameSecure = "__Host-auth_session"
-	CookieNameHTTP   = "auth_session"
-)
+// defaultCookieName is the base cookie name used when CookieConfig.Name is unset.
+const defaultCookieName = "auth_session"
 
 // DefaultCookieConfig returns a CookieConfig with secure defaults.
 func DefaultCookieConfig() CookieConfig {
 	return CookieConfig{
 		Posture:  PostureSecure,
-		Name:     CookieNameHTTP,
+		Name:     defaultCookieName,
 		Path:     "/",
 		SameSite: http.SameSiteLaxMode,
 	}
@@ -102,7 +99,7 @@ func DefaultCookieConfig() CookieConfig {
 // baseName returns the configured base cookie name, falling back to the
 // library default when unset.
 func (c *CookieConfig) baseName() string {
-	return cmp.Or(c.Name, CookieNameHTTP)
+	return cmp.Or(c.Name, defaultCookieName)
 }
 
 // usesHostPrefix reports whether this posture emits a __Host--prefixed cookie
