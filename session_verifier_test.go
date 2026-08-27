@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cplieger/auth/v4/internal/capture"
+	"github.com/cplieger/auth/v5/internal/capture"
 )
 
 // newVerifierRequest builds a request carrying the session cookie for the

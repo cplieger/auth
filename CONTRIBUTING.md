@@ -46,7 +46,7 @@ independently importable.
 
 | Path                          | Purpose                                                                                                                                                                     |
 |-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `github.com/cplieger/auth/v4` | Passwords, sessions, tokens, cookies, API keys, WebAuthn/OIDC entry points, middleware/guards (`Authenticator`, `SessionVerifier`, `APIKeyVerifier`, `CredentialVerifier`). |
+| `github.com/cplieger/auth/v5` | Passwords, sessions, tokens, cookies, API keys, WebAuthn/OIDC entry points, middleware/guards (`Authenticator`, `SessionVerifier`, `APIKeyVerifier`, `CredentialVerifier`). |
 | `auth/ratelimit`              | Dual sliding-window per-IP + per-account brute-force limiter (OWASP ASVS 2.2.1). Stdlib-only.                                                                               |
 | `auth/oidc`                   | OIDC provider config validation and helpers.                                                                                                                                |
 | `auth/webauthn`               | WebAuthn/FIDO2 helpers (e.g. AAGUID formatting).                                                                                                                            |
