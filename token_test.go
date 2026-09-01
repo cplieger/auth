@@ -56,7 +56,6 @@ func TestCSRFToken_Expired(t *testing.T) {
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
 	token, _ := CSRFToken(key, "sess")
-	// Verify with 0 maxAge should expire immediately
 	if err := VerifyCSRFToken(key, "sess", token, 0); err != ErrTokenExpired {
 		t.Fatalf("expected ErrTokenExpired, got %v", err)
 	}

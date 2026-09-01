@@ -2,7 +2,7 @@ package auth
 
 import "testing"
 
-// TestNilOption_InSlice_NoPanic regression: nil Option in variadic must not panic.
+// A nil Option in the variadic slice must not panic.
 func TestNilOption_InSlice_NoPanic(t *testing.T) {
 	t.Parallel()
 	defer func() {
@@ -19,7 +19,7 @@ func TestNilOption_InSlice_NoPanic(t *testing.T) {
 	}
 }
 
-// TestNilOption_SessionVerifier_NoPanic regression: nil Option must not panic.
+// A nil Option must not panic.
 func TestNilOption_SessionVerifier_NoPanic(t *testing.T) {
 	t.Parallel()
 	defer func() {
@@ -33,7 +33,7 @@ func TestNilOption_SessionVerifier_NoPanic(t *testing.T) {
 	}
 }
 
-// TestNilHasherOption_NoPanic regression: nil HasherOption must not panic.
+// A nil HasherOption must not panic.
 func TestNilHasherOption_NoPanic(t *testing.T) {
 	t.Parallel()
 	defer func() {

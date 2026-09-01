@@ -21,7 +21,7 @@ func FuzzRateLimiterAllow(f *testing.F) {
 			IPWindow:      time.Second,
 			AcctLimit:     3,
 			AcctWindow:    time.Second,
-			PruneInterval: time.Hour, // don't prune during test
+			PruneInterval: time.Hour,
 			MaxEntries:    100,
 		}
 		rl := New(t.Context(), cfg)
@@ -35,7 +35,6 @@ func FuzzRateLimiterAllow(f *testing.F) {
 		now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 		rl.nowFunc = func() time.Time { return now }
 
-		// Record up to limit
 		for range cfg.IPLimit {
 			rl.Record(ClientIP(ip), Username(username))
 		}
@@ -50,7 +49,6 @@ func FuzzRateLimiterAllow(f *testing.F) {
 			t.Fatal("Allow returned true after limit reached")
 		}
 
-		// Map cardinality bounded by MaxEntries
 		rl.muIP.Lock()
 		ipLen := len(rl.ipWindows)
 		rl.muIP.Unlock()

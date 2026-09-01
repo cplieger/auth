@@ -19,7 +19,6 @@ func TestVerifyCSRFToken_RejectsExtraBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Append extra bytes to the valid token
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +43,6 @@ func TestVerifyCSRFToken_RejectsTruncated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Truncate the token
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
 		t.Fatal(err)

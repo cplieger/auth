@@ -80,7 +80,6 @@ func TestCookieConfig_SetAndRead(t *testing.T) {
 		t.Errorf("cookie value = %q, want %q", cookies[0].Value, "tok123")
 	}
 
-	// Read it back
 	r2 := httptest.NewRequest(http.MethodGet, "/", nil)
 	r2.AddCookie(cookies[0])
 	if got := cfg.ReadCookie(r2); got != "tok123" {
@@ -113,7 +112,7 @@ func TestCookieConfig_CustomSameSiteAndPath(t *testing.T) {
 func TestCookieConfig_SecurePosture(t *testing.T) {
 	t.Parallel()
 	cfg := CookieConfig{Posture: PostureSecure, Name: "s"}
-	r := httptest.NewRequest(http.MethodGet, "/", nil) // HTTP, not HTTPS
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	cfg.SetCookie(w, r, "v", 100)
 	resp := w.Result()
@@ -183,9 +182,8 @@ func TestCookieConfig_TrustForwardedHeaders_True(t *testing.T) {
 
 func TestCookieConfig_StableNamePerPosture(t *testing.T) {
 	t.Parallel()
-	// Verify posture produces ONE stable name regardless of request
 	cfg := DefaultCookieConfig()
-	r1 := httptest.NewRequest(http.MethodGet, "/", nil) // HTTP
+	r1 := httptest.NewRequest(http.MethodGet, "/", nil)
 	r2 := httptest.NewRequest(http.MethodGet, "/", nil)
 	r2.Header.Set("X-Forwarded-Proto", "https")
 	if cfg.CookieName(r1) != cfg.CookieName(r2) {
