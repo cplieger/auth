@@ -37,7 +37,6 @@ func TestNewSessionVerifier_NoOptions_AppliesDefaults(t *testing.T) {
 	if v.cfg.absTimeout != DefaultAbsTimeout {
 		t.Errorf("absTimeout = %v, want %v", v.cfg.absTimeout, DefaultAbsTimeout)
 	}
-	// Logger should fall back to slog.Default()
 	if v.logger() != slog.Default() {
 		t.Error("logger() should return slog.Default() when no WithLogger is set")
 	}
@@ -64,7 +63,6 @@ func TestNewSessionVerifier_NoOptions_SessionValid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Use NO timeout options — defaults must keep 5-minute-old session valid
 	v := mustSessionVerifier(t, db)
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: plaintext})
@@ -102,7 +100,7 @@ func TestNew_NoOptions_SessionValid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := mustAuthenticator(t, db) // NO options
+	a := mustAuthenticator(t, db)
 	r, _ := http.NewRequest(http.MethodGet, "/api/data", nil)
 	r.AddCookie(&http.Cookie{Name: defaultSecureCookieName, Value: plaintext})
 
@@ -137,7 +135,7 @@ func TestNewAPIKeyVerifier_NoOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	v := NewAPIKeyVerifier(db) // no options
+	v := NewAPIKeyVerifier(db)
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-Api-Key", plaintext)
 
@@ -157,7 +155,6 @@ func TestWithX_OptionOrderDoesNotMatter(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	cookie := CookieConfig{Posture: PostureInsecureLAN, Name: "custom_sess"}
 
-	// Order A: logger, idle, abs, cookie, loginPath
 	a1 := mustAuthenticator(t, newFakeSessionStore(),
 		WithLogger(logger),
 		WithIdleTimeout(2*time.Hour),
@@ -165,7 +162,6 @@ func TestWithX_OptionOrderDoesNotMatter(t *testing.T) {
 		WithCookie(cookie),
 		WithLoginPath("/signin"),
 	)
-	// Order B: reverse
 	a2 := mustAuthenticator(t, newFakeSessionStore(),
 		WithLoginPath("/signin"),
 		WithCookie(cookie),
@@ -222,12 +218,11 @@ func TestWithX_IndependentThreading(t *testing.T) {
 // WithPepper option produces hashes verifiable by package-level VerifyPassword.
 func TestNewHasher_NoPepper_EqualsOldBehavior(t *testing.T) {
 	t.Parallel()
-	h, err := NewHasher(DefaultArgon2Params()) // no WithPepper
+	h, err := NewHasher(DefaultArgon2Params())
 	if err != nil {
 		t.Fatal(err)
 	}
 	hash := h.Hash("test-password")
-	// Package-level verify (no pepper) should work
 	ok, err := VerifyPassword("test-password", hash)
 	if err != nil {
 		t.Fatal(err)

@@ -69,7 +69,6 @@ func TestProperty_PasswordLengthValidation(t *testing.T) {
 			t.Fatalf("ValidateSoloPasswordLength(%q) = %v", validSolo, err)
 		}
 
-		// Max length enforcement
 		tooLong := rapid.StringN(129, 256, -1).Draw(t, "tooLong")
 		if err := ValidateMultiFactorPasswordLength(tooLong); err == nil {
 			t.Fatalf("ValidateMultiFactorPasswordLength(len=%d) = nil, want error", len([]rune(tooLong)))
@@ -108,7 +107,6 @@ func TestVerifyPassword_rejects_malformed_hashes(t *testing.T) {
 func TestNeedsRehash(t *testing.T) {
 	t.Parallel()
 
-	// Current params → false
 	hash := HashPassword("test-password")
 	if NeedsRehash(hash) {
 		t.Error("current params should not need rehash")

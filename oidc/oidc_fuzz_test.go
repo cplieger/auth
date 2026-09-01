@@ -16,9 +16,7 @@ func FuzzOIDCValidateConfig(f *testing.F) {
 			RedirectURI: redirectURI,
 		}
 		err := ValidateConfig(cfg)
-		// Must never panic
 		if err == nil {
-			// If no error, all fields must be non-empty
 			if issuerURL == "" || clientID == "" || redirectURI == "" {
 				t.Fatal("nil error with empty required field")
 			}

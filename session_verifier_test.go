@@ -265,7 +265,6 @@ func TestSessionVerifier_updates_activity(t *testing.T) {
 		t.Fatal("Verify returned nil user")
 	}
 
-	// Check that LastActivity was updated
 	sess, _, _ := db.SessionByHash(ctx, hash)
 	if sess.LastActivity.Equal(created) {
 		t.Error("LastActivity was not updated after Verify")

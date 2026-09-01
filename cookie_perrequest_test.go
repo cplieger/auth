@@ -38,7 +38,7 @@ func TestCookieConfig_PerRequest_HTTPS_EmitsHostSecure(t *testing.T) {
 func TestCookieConfig_PerRequest_HTTP_EmitsBareNoSecure(t *testing.T) {
 	t.Parallel()
 	cfg := CookieConfig{Posture: PosturePerRequest, Name: "sfx_session"}
-	r := httptest.NewRequest(http.MethodGet, "/", nil) // plain HTTP, no TLS
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	cfg.SetCookie(w, r, "tok", 3600)
 

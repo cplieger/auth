@@ -13,15 +13,12 @@ func FuzzVerifyOpaqueToken(f *testing.F) {
 	f.Add("正確なトークン")
 
 	f.Fuzz(func(t *testing.T, fuzzInput string) {
-		// Generate a real token via production code
 		plaintext, hash := GenerateOpaqueToken()
 
-		// Round-trip: correct plaintext must verify
 		if err := VerifyOpaqueToken(plaintext, hash, time.Now().Add(time.Hour)); err != nil {
 			t.Fatalf("round-trip failed: %v", err)
 		}
 
-		// Fuzzed input must not verify (unless it happens to equal plaintext)
 		if fuzzInput == plaintext {
 			return
 		}

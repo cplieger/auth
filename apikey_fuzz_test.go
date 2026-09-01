@@ -24,12 +24,10 @@ func FuzzVerifyAPIKey(f *testing.F) {
 	f.Add("ak_abcdef1234567890")
 
 	f.Fuzz(func(t *testing.T, fuzzInput string) {
-		// Generate a real API key
 		plaintext, hash, _, _ := GenerateAPIKey("ak_")
 
 		store := &fakeAPIKeyStore{key: &Key{KeyHash: hash, UserID: 1}}
 
-		// Round-trip: correct key must verify
 		k, err := VerifyAPIKey(t.Context(), store, plaintext)
 		if err != nil {
 			t.Fatalf("round-trip failed: %v", err)
@@ -38,7 +36,6 @@ func FuzzVerifyAPIKey(f *testing.F) {
 			t.Fatal("round-trip returned nil key")
 		}
 
-		// Fuzzed input must not verify (unless equal to plaintext)
 		if fuzzInput == plaintext {
 			return
 		}

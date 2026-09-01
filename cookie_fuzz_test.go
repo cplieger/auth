@@ -20,13 +20,11 @@ func FuzzValidateCookieField(f *testing.F) {
 		if err != nil {
 			return
 		}
-		// If valid: no control chars
 		for _, r := range input {
 			if r < 0x20 || r == 0x7f {
 				t.Fatalf("nil error but contains control char %U", r)
 			}
 		}
-		// For Name field: no cookie-name separators
 		for _, r := range input {
 			switch r {
 			case ' ', ';', '=', ',', '"', '\\':

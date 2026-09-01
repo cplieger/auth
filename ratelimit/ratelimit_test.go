@@ -488,21 +488,17 @@ func TestRateLimiter_Reset_clears_counters(t *testing.T) {
 	ip := ClientIP("10.0.0.1")
 	username := Username("alice")
 
-	// Fill up to the limit
 	for range rl.ipLimit {
 		rl.Record(ip, username)
 	}
 
-	// Should be blocked
 	allowed, _ := rl.Allow(ip, username)
 	if allowed {
 		t.Fatal("Allow() = true before Reset, want false")
 	}
 
-	// Reset on successful login
 	rl.Reset(ip, username)
 
-	// Should be allowed again
 	allowed, _ = rl.Allow(ip, username)
 	if !allowed {
 		t.Fatal("Allow() = false after Reset, want true")

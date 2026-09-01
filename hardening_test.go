@@ -13,7 +13,6 @@ import (
 func TestPosture_SecureNeverEmitsUnprefixedName(t *testing.T) {
 	t.Parallel()
 	cfg := CookieConfig{Posture: PostureSecure, Name: "sess"}
-	// Regardless of request scheme, name is always prefixed
 	for i := range 100 {
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		if i%2 == 0 {
@@ -40,7 +39,7 @@ func TestPosture_InsecureLANNeverEmitsHostPrefix(t *testing.T) {
 func TestPosture_ForceSecure_CookieAttributes(t *testing.T) {
 	t.Parallel()
 	cfg := CookieConfig{Posture: PostureForceSecure, Name: "sess"}
-	r := httptest.NewRequest(http.MethodGet, "/", nil) // no TLS
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	cfg.SetCookie(w, r, "tok", 3600)
 	c := w.Result().Cookies()[0]
@@ -167,9 +166,7 @@ func TestRotateSessionToken_OldTokenBecomesInvalid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Rotate
 	_, newHash, _ := RotateSessionToken(oldPlain)
-	// Simulate store rotation: delete old, create new
 	if err := db.DeleteSession(ctx, oldHash); err != nil {
 		t.Fatal(err)
 	}
@@ -180,11 +177,9 @@ func TestRotateSessionToken_OldTokenBecomesInvalid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Old token should no longer resolve
 	if sess, _, _ := db.SessionByHash(ctx, oldHash); sess != nil {
 		t.Error("old session still resolves after rotation, want deleted")
 	}
-	// New token should resolve
 	if sess, _, _ := db.SessionByHash(ctx, newHash); sess == nil {
 		t.Error("new session does not resolve after rotation, want present")
 	}
