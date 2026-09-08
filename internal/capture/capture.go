@@ -10,6 +10,7 @@ package capture
 
 import (
 	"context"
+	"log"
 	"log/slog"
 	"strings"
 	"sync"
@@ -38,10 +39,27 @@ func New() (*slog.Logger, *Recorder) {
 func Default(tb testing.TB) *Recorder {
 	tb.Helper()
 	rec := &Recorder{}
-	prev := slog.Default()
-	slog.SetDefault(slog.New(rec))
-	tb.Cleanup(func() { slog.SetDefault(prev) })
+	SwapDefault(tb, slog.New(rec))
 	return rec
+}
+
+// SwapDefault installs logger as slog's default for the test and restores all
+// three globals slog.SetDefault writes. It also points the log package at the
+// installed handler and SKIPS that redirect for slog's own default handler, so
+// restoring slog alone leaves log writing into a buffer nothing reads. slog
+// goes back first: reinstalling a non-default handler re-runs the redirect and
+// would undo an earlier log restore. Use it directly when the test asserts
+// through its own handler rather than a Recorder; it mutates global state, so
+// the test must not run in parallel.
+func SwapDefault(tb testing.TB, logger *slog.Logger) {
+	tb.Helper()
+	prev, prevWriter, prevFlags := slog.Default(), log.Writer(), log.Flags()
+	slog.SetDefault(logger)
+	tb.Cleanup(func() {
+		slog.SetDefault(prev)
+		log.SetOutput(prevWriter)
+		log.SetFlags(prevFlags)
+	})
 }
 
 // Enabled reports true for every level so nothing is filtered before capture.
