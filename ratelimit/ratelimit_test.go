@@ -12,6 +12,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/cplieger/auth/v5/internal/capture"
 	"pgregory.net/rapid"
 )
 
@@ -666,9 +667,7 @@ func TestNormalizeConfig(t *testing.T) {
 // default logger.
 func TestNormalizeConfig_warns_that_a_nonpositive_limit_blocks_every_request(t *testing.T) {
 	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	capture.SwapDefault(t, slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 	// Every other field is usable, so only the two limits can warn.
 	in := Config{
@@ -911,9 +910,7 @@ func TestRateLimiter_pruneLoop_prunes_stale_on_tick(t *testing.T) {
 
 func TestRateLimiter_capWarning_logs_once_per_episode(t *testing.T) {
 	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	capture.SwapDefault(t, slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 	cfg := Config{
@@ -942,9 +939,7 @@ func TestRateLimiter_capWarning_logs_once_per_episode(t *testing.T) {
 
 func TestRateLimiter_capWarning_rearms_after_prune_below_cap(t *testing.T) {
 	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	capture.SwapDefault(t, slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 	cfg := Config{
@@ -980,9 +975,7 @@ func TestRateLimiter_capWarning_rearms_after_prune_below_cap(t *testing.T) {
 
 func TestRateLimiter_capWarning_stays_armed_while_prune_leaves_map_at_cap(t *testing.T) {
 	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	capture.SwapDefault(t, slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 	cfg := Config{
@@ -1018,9 +1011,7 @@ func TestRateLimiter_capWarning_stays_armed_while_prune_leaves_map_at_cap(t *tes
 
 func TestRateLimiter_accountCapWarning_stays_armed_while_prune_leaves_map_at_cap(t *testing.T) {
 	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	capture.SwapDefault(t, slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 	now := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 	cfg := Config{
