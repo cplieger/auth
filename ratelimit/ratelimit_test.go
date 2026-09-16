@@ -567,10 +567,17 @@ func BenchmarkRateLimiter_parallel(b *testing.B) {
 	rl := New(b.Context(), DefaultConfig())
 	defer rl.Shutdown(context.Background())
 
+	// The IP working set fits inside DefaultConfig's entry cap, which is the
+	// steady state this measures. Cycling more keys than the cap holds leaves the
+	// limiter permanently in evictLeastRecentlyActive, whose scan is O(cap) per
+	// call, so ns/op becomes a function of b.N rather than of the request path.
+	const distinctIPs = 8192 // 32 x 256, under DefaultConfig's MaxEntries
+
 	b.RunParallel(func(pb *testing.PB) {
 		i := 0
 		for pb.Next() {
-			ip := ClientIP(fmt.Sprintf("10.0.%d.%d", (i/256)%256, i%256+1))
+			n := i % distinctIPs
+			ip := ClientIP(fmt.Sprintf("10.0.%d.%d", n/256, n%256+1))
 			user := Username(fmt.Sprintf("user-%d", i%100))
 			rl.Allow(ip, user)
 			rl.Record(ip, user)
