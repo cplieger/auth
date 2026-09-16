@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
   "lastUpdate": 1789568975241,
-  "repoUrl": "https://github.com/cplieger/ci",
+  "repoUrl": "https://github.com/cplieger/auth",
   "entries": {
     "Benchmark": [
       {
@@ -261,7 +261,7 @@ window.BENCHMARK_DATA = {
       {
         "commit": {
           "author": {
-            "name": "Christopher Plieger",
+            "name": "cplieger",
             "username": "cplieger",
             "email": "917744+cplieger@users.noreply.github.com"
           },
@@ -270,10 +270,10 @@ window.BENCHMARK_DATA = {
             "username": "cplieger",
             "email": "917744+cplieger@users.noreply.github.com"
           },
-          "id": "09cc4b840ea4287151c69cae879cdb185cc1b4da",
-          "message": "ci: correct the weekly-bench vibekit budget figure\n\nThe max-parallel comment claimed vibekit measured 36.5 minutes at\n-count=10. It never did: the shard needed about 77 minutes and was\ncancelled at the 60-minute job wall every week since enrolment, because\none benchmark's per-op cost grew with b.N. That benchmark is fixed and\nthe suite measures 25 minutes locally, so the comment now names the\nfigure it is and tells the reader to re-read it off the next run.",
-          "timestamp": "2026-09-16T12:01:07Z",
-          "url": "https://github.com/cplieger/ci/commit/09cc4b840ea4287151c69cae879cdb185cc1b4da"
+          "id": "28cf9db3294ac64c93e439cc9d817f591f7cb8c9",
+          "message": "test(ratelimit): bound the benchmark's IP set to the entry cap\n\nBenchmarkRateLimiter_parallel minted a fresh address per iteration, so\npast DefaultConfig().MaxEntries every Allow call ran the limiter's\neviction path instead of the steady-state path the benchmark exists to\nmeasure. The reported cost was a function of b.N (196,279 to 267,554\nns/op), and the package took 2,403 s of the weekly-bench job's 2,556 s.\n\nReusing 8,192 addresses keeps the working set under the 10,000-entry cap,\nso the benchmark measures Allow: 461 to 599 ns/op, and N-independent\n(584 / 510 / 551 ns/op at 100000x, 1000000x and 8000000x).",
+          "timestamp": "2026-09-16T11:59:00Z",
+          "url": "https://github.com/cplieger/auth/commit/28cf9db3294ac64c93e439cc9d817f591f7cb8c9"
         },
         "date": 1789568974914,
         "tool": "customSmallerIsBetter",
