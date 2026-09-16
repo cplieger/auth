@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789521491883,
-  "repoUrl": "https://github.com/cplieger/auth",
+  "lastUpdate": 1789568975241,
+  "repoUrl": "https://github.com/cplieger/ci",
   "entries": {
     "Benchmark": [
       {
@@ -253,6 +253,112 @@ window.BENCHMARK_DATA = {
             "name": "BenchmarkAuthenticate/session_cookie",
             "value": 756.55,
             "range": "± 20.9",
+            "unit": "ns/op",
+            "extra": "10 samples, median"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Christopher Plieger",
+            "username": "cplieger",
+            "email": "917744+cplieger@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "Christopher Plieger",
+            "username": "cplieger",
+            "email": "917744+cplieger@users.noreply.github.com"
+          },
+          "id": "09cc4b840ea4287151c69cae879cdb185cc1b4da",
+          "message": "ci: correct the weekly-bench vibekit budget figure\n\nThe max-parallel comment claimed vibekit measured 36.5 minutes at\n-count=10. It never did: the shard needed about 77 minutes and was\ncancelled at the 60-minute job wall every week since enrolment, because\none benchmark's per-op cost grew with b.N. That benchmark is fixed and\nthe suite measures 25 minutes locally, so the comment now names the\nfigure it is and tells the reader to re-read it off the next run.",
+          "timestamp": "2026-09-16T12:01:07Z",
+          "url": "https://github.com/cplieger/ci/commit/09cc4b840ea4287151c69cae879cdb185cc1b4da"
+        },
+        "date": 1789568974914,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "BenchmarkAuthenticate/api_key_header - B/op",
+            "value": 536,
+            "range": "± 0",
+            "unit": "B/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/api_key_header - allocs/op",
+            "value": 6,
+            "range": "± 0",
+            "unit": "allocs/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/api_key_header",
+            "value": 495.45,
+            "range": "± 2.35",
+            "unit": "ns/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/no_credentials - B/op",
+            "value": 24,
+            "range": "± 0",
+            "unit": "B/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/no_credentials - allocs/op",
+            "value": 1,
+            "range": "± 0",
+            "unit": "allocs/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/no_credentials",
+            "value": 70.045,
+            "range": "± 0.66",
+            "unit": "ns/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/session_cookie - B/op",
+            "value": 688,
+            "range": "± 0",
+            "unit": "B/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/session_cookie - allocs/op",
+            "value": 7,
+            "range": "± 0",
+            "unit": "allocs/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/session_cookie",
+            "value": 691.1,
+            "range": "± 13.65",
+            "unit": "ns/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkRateLimiter_parallel - B/op",
+            "value": 208.5,
+            "range": "± 11.5",
+            "unit": "B/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkRateLimiter_parallel - allocs/op",
+            "value": 2,
+            "range": "± 0.0",
+            "unit": "allocs/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkRateLimiter_parallel",
+            "value": 841.55,
+            "range": "± 32.35",
             "unit": "ns/op",
             "extra": "10 samples, median"
           }
