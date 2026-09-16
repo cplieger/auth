@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788311461417,
-  "repoUrl": "https://github.com/cplieger/auth",
+  "lastUpdate": 1789521491883,
+  "repoUrl": "https://github.com/cplieger/ci",
   "entries": {
     "Benchmark": [
       {
@@ -168,6 +168,91 @@ window.BENCHMARK_DATA = {
             "name": "BenchmarkAuthenticate/session_cookie",
             "value": 684.9,
             "range": "± 10.7",
+            "unit": "ns/op",
+            "extra": "10 samples, median"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Christopher Plieger",
+            "username": "cplieger",
+            "email": "917744+cplieger@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "d34f4d66d9b0502ee912cd650306671ec71ff3d9",
+          "message": "chore(deps): update benchmark-action/github-action-benchmark action to v1.22.2 (#615)",
+          "timestamp": "2026-09-15T11:02:29Z",
+          "url": "https://github.com/cplieger/ci/commit/d34f4d66d9b0502ee912cd650306671ec71ff3d9"
+        },
+        "date": 1789521491397,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "BenchmarkAuthenticate/api_key_header - B/op",
+            "value": 536,
+            "range": "± 0",
+            "unit": "B/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/api_key_header - allocs/op",
+            "value": 6,
+            "range": "± 0",
+            "unit": "allocs/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/api_key_header",
+            "value": 548.75,
+            "range": "± 6.55",
+            "unit": "ns/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/no_credentials - B/op",
+            "value": 24,
+            "range": "± 0",
+            "unit": "B/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/no_credentials - allocs/op",
+            "value": 1,
+            "range": "± 0",
+            "unit": "allocs/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/no_credentials",
+            "value": 68.735,
+            "range": "± 1.23",
+            "unit": "ns/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/session_cookie - B/op",
+            "value": 688,
+            "range": "± 0",
+            "unit": "B/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/session_cookie - allocs/op",
+            "value": 7,
+            "range": "± 0",
+            "unit": "allocs/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/session_cookie",
+            "value": 756.55,
+            "range": "± 20.9",
             "unit": "ns/op",
             "extra": "10 samples, median"
           }
