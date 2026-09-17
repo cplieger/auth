@@ -2,10 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/cplieger/auth/v5.svg)](https://pkg.go.dev/github.com/cplieger/auth/v5)
 [![Go version](https://img.shields.io/github/go-mod/go-version/cplieger/auth)](https://github.com/cplieger/auth/blob/main/go.mod)
-[![Test coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/cplieger/auth/badges/coverage.json)](https://github.com/cplieger/auth/actions/workflows/coverage.yml)
 [![Mutation](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/cplieger/auth/badges/mutation.json)](https://github.com/cplieger/auth/issues?q=label%3Agremlins-tracker)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13199/badge)](https://www.bestpractices.dev/projects/13199)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/cplieger/auth/badge)](https://scorecard.dev/viewer/?uri=github.com/cplieger/auth)
 
 > Go authentication library: Argon2id passwords, WebAuthn/passkeys, OIDC, sessions, API keys, and RBAC.
 
@@ -176,6 +173,29 @@ Exported in-memory `AuthenticatorStore` implementation for consumer tests. Every
 store := authtest.NewMemStore()
 store.AddUser(&auth.User{Username: "test", Role: auth.RoleUser, Enabled: true})
 ```
+
+## Security
+
+The primitives here are hardened, but the security of a deployment depends on how they are
+wired. This library owns the mechanisms below; the consumer owns everything above them.
+
+- Argon2id with OWASP-recommended parameters and a per-hash random salt, optional HMAC
+  pepper. API keys, CSRF tokens, opaque tokens and password hashes are compared in
+  constant time.
+- Session cookies carry a 256-bit random token, stored only as its SHA-256 hash, so the
+  cookie value is not sensitive and needs no encryption or signing (see
+  [Unsupported by Design](#unsupported-by-design)).
+- Every parser that reads untrusted input — PHC strings, cookie configuration, API keys,
+  session and opaque tokens, OIDC responses, WebAuthn ceremony data — has a fuzz target.
+- What the library cannot enforce: that you call a verifier on every protected route, that
+  your cookie posture matches your TLS termination, or that your store returns a
+  caller-owned copy of a looked-up record (`store_contract.go`). A misconfigured store or
+  an unguarded route is not a failure this library can detect.
+- The cryptography here has had no independent third-party audit.
+
+Report a vulnerability privately per
+[SECURITY.md](https://github.com/cplieger/.github/blob/main/SECURITY.md) rather than in a
+public issue.
 
 ## Unsupported by Design
 
