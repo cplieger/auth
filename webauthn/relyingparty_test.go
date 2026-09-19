@@ -45,7 +45,7 @@ func TestCeremony_Expires_matchesTheConfiguredTimeout(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	before := time.Now()
-	_, ceremony, err := BeginLogin(rp)
+	_, ceremony, err := BeginLogin(rp, exampleOrigin(t))
 	if err != nil {
 		t.Fatalf("BeginLogin: %v", err)
 	}
@@ -65,4 +65,20 @@ func TestCeremony_zeroValueHasNoDeadline(t *testing.T) {
 	if !zero.Expires().IsZero() {
 		t.Errorf("zero Ceremony.Expires() = %v, want the zero time", zero.Expires())
 	}
+}
+
+// exampleOrigin is the origin every ceremony test begins at: the relying
+// party's own https origin, which both arms of CheckOrigin admit.
+func exampleOrigin(t *testing.T) Origin {
+	t.Helper()
+	return mustParseOrigin(t, "https://example.com")
+}
+
+func mustParseOrigin(t *testing.T, raw string) Origin {
+	t.Helper()
+	o, err := ParseOrigin(raw)
+	if err != nil {
+		t.Fatalf("ParseOrigin(%q): %v", raw, err)
+	}
+	return o
 }

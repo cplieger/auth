@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/cplieger/auth/v5"
+	"github.com/cplieger/auth/v6"
 )
 
 // TestUser_WebAuthnID_returnsTheStoredHandle: the account presents the handle

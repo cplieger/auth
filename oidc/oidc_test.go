@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cplieger/auth/v5"
+	"github.com/cplieger/auth/v6"
 	"golang.org/x/oauth2"
 	"pgregory.net/rapid"
 )

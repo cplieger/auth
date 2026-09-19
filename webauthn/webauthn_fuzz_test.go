@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/cplieger/auth/v5"
+	"github.com/cplieger/auth/v6"
 	"github.com/go-webauthn/webauthn/protocol"
 )
 

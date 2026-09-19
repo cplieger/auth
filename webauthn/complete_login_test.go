@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cplieger/auth/v5"
-	"github.com/cplieger/auth/v5/internal/capture"
+	"github.com/cplieger/auth/v6"
+	"github.com/cplieger/auth/v6/internal/capture"
 	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
 )
 
@@ -220,7 +220,7 @@ func TestCompleteLogin_ceremony_failure_returns_wrapped_error(t *testing.T) {
 		t.Fatal(err)
 	}
 	fs := &fakeStore{}
-	sess := Ceremony{data: &gowebauthn.SessionData{Challenge: "test-challenge"}}
+	sess := Ceremony{data: &gowebauthn.SessionData{Challenge: "test-challenge", Origin: "https://example.com"}}
 	r := httptest.NewRequest(http.MethodPost, "/finish", strings.NewReader("not json"))
 
 	user, cerr := CompleteLogin(t.Context(), wa, fs, sess, r)
