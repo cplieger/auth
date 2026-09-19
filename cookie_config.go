@@ -199,7 +199,7 @@ func (c *CookieConfig) CookieName(r *http.Request) string {
 // default posture (PostureSecure) always sets Secure. Static analysis flags the
 // conditional Secure (gosec G124, CodeQL go/cookie-secure-not-set); that is a
 // documented false positive for the HTTP-LAN support, exercised by
-// cookie_perrequest_test.go and redteam_test.go.
+// cookie_perrequest_test.go.
 func (c *CookieConfig) SetCookie(w http.ResponseWriter, r *http.Request, token string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is conditional for LAN HTTP / per-request support
 		Name:     c.requestName(r),
