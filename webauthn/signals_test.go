@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cplieger/auth/v5"
+	"github.com/cplieger/auth/v6"
 )
 
 func TestNewSignals_table(t *testing.T) {

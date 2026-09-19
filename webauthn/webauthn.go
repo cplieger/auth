@@ -16,7 +16,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/cplieger/auth/v5"
+	"github.com/cplieger/auth/v6"
 	"github.com/go-webauthn/webauthn/protocol"
 	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
 )
@@ -301,7 +301,9 @@ func credentialToAPI(c *gowebauthn.Credential, userID int64, name string) *auth.
 //
 // Construct one with [New]. The zero value is not usable.
 type RelyingParty struct {
-	wa *gowebauthn.WebAuthn
+	id          string
+	displayName string
+	origins     []Origin
 }
 
 // ID returns the relying party identifier ceremonies are bound to. A stored
@@ -309,7 +311,91 @@ type RelyingParty struct {
 // how a relying-party rename is detected rather than silently orphaning every
 // passkey.
 func (rp *RelyingParty) ID() string {
-	return rp.wa.Config.RPID
+	return rp.id
+}
+
+// CheckOrigin reports whether a ceremony may be conducted at o, returning nil
+// or a *[OriginError] naming the reason.
+//
+// An origin is acceptable when its scheme is https, or http for the
+// specification's localhost exception, and its host is the relying-party ID or
+// a proper subdomain of it. The port is not restricted: a relying party cannot
+// know the port a browser reaches it on, and the port is carried into the
+// ceremony verbatim, so a response must declare the same one.
+//
+// When RPConfig.Origins was set, the origin must also equal one of the listed
+// origins on scheme, host and port. The list narrows the policy and never
+// widens it: [New] refuses a listed origin the policy would reject.
+func (rp *RelyingParty) CheckOrigin(o Origin) error {
+	if err := rp.policy(o); err != nil {
+		return err
+	}
+	if len(rp.origins) == 0 {
+		return nil
+	}
+	for _, allowed := range rp.origins {
+		if allowed.scheme == o.scheme && allowed.host == o.host && allowed.port == o.port {
+			return nil
+		}
+	}
+	return &OriginError{Origin: o.String(), RPID: rp.id, Reason: RejectNotAllowlisted}
+}
+
+// policy is CheckOrigin without the allowlist arm. The IP rule runs before the
+// scheme rule and is otherwise redundant with the host rule (New refuses an IP
+// relying-party ID): it exists so an address that can never carry a passkey is
+// reported as that, rather than as a missing scheme or an uncovered host.
+func (rp *RelyingParty) policy(o Origin) *OriginError {
+	refuse := func(reason OriginRejection) *OriginError {
+		return &OriginError{Origin: o.String(), RPID: rp.id, Reason: reason}
+	}
+	switch {
+	case o.IsZero():
+		return refuse(RejectNoOrigin)
+	case o.isIPHost():
+		return refuse(RejectIPHost)
+	case o.scheme == schemeHTTP && o.host != "localhost":
+		return refuse(RejectInsecureScheme)
+	case o.host != rp.id && !strings.HasSuffix(o.host, "."+rp.id):
+		return refuse(RejectHostNotCovered)
+	}
+	return nil
+}
+
+// handleFor builds the upstream handle for one ceremony, whose only expected
+// origin is the one that ceremony is bound to.
+func (rp *RelyingParty) handleFor(origin string) (*gowebauthn.WebAuthn, error) {
+	wa, err := gowebauthn.New(&gowebauthn.Config{
+		RPID:          rp.id,
+		RPDisplayName: rp.displayName,
+		RPOrigins:     []string{origin},
+		Timeouts: gowebauthn.TimeoutsConfig{
+			Login: gowebauthn.TimeoutConfig{
+				Enforce:    true,
+				Timeout:    CeremonyTimeout,
+				TimeoutUVD: CeremonyTimeout,
+			},
+			Registration: gowebauthn.TimeoutConfig{
+				Enforce:    true,
+				Timeout:    CeremonyTimeout,
+				TimeoutUVD: CeremonyTimeout,
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("auth/webauthn: relying party %q at origin %q: %w", rp.id, origin, err)
+	}
+	return wa, nil
+}
+
+// boundHandle builds the upstream handle for finishing ceremony, from the
+// origin it was begun at.
+func (rp *RelyingParty) boundHandle(ceremony Ceremony) (*gowebauthn.WebAuthn, error) {
+	origin := ceremony.origin()
+	if origin == "" {
+		return nil, ErrCeremonyUnbound
+	}
+	return rp.handleFor(origin)
 }
 
 // Ceremony is the server-side state of one in-flight WebAuthn ceremony: the
@@ -341,52 +427,91 @@ func (c Ceremony) Expires() time.Time {
 	return c.data.Expires
 }
 
+// origin returns the origin the ceremony was begun at, or "" for a ceremony
+// that did not come from a Begin function.
+func (c Ceremony) origin() string {
+	if c.data == nil {
+		return ""
+	}
+	return c.data.Origin
+}
+
 // RPConfig identifies the relying party that a [New]-constructed
 // [RelyingParty] serves. The ID and display name would otherwise sit as
 // adjacent same-typed string parameters, where a silent swap ships a broken
 // RP ID; the field names make each value's role explicit at the call site.
+//
+// The origin a ceremony expects is the origin it is begun at, judged by
+// [RelyingParty.CheckOrigin]; Origins optionally narrows that judgement to an
+// explicit set.
 type RPConfig struct {
 	// ID is the relying party identifier, an effective domain
-	// (e.g. "example.com").
+	// (e.g. "example.com"), spelled in lowercase. See [ValidateRPID].
 	ID string
 	// DisplayName is the human-readable relying party name shown by
 	// authenticators.
 	DisplayName string
-	// Origins are the allowed browser origins for ceremonies
-	// (e.g. "https://example.com").
+	// Origins, when non-empty, restricts ceremonies to exactly these browser
+	// origins (e.g. "https://app.example.com"): a presented origin must satisfy
+	// the origin policy AND equal one entry on scheme, host and port. Leave it
+	// nil to let the policy decide alone. New refuses an entry the policy
+	// itself would reject, so a list can never widen the policy.
 	Origins []string
 }
 
+// ErrIllegalRPID reports a value that cannot be a relying-party ID. Every
+// error [ValidateRPID] returns matches it with errors.Is and also carries the
+// upstream validator's reason.
+var ErrIllegalRPID = errors.New("auth/webauthn: illegal relying-party ID")
+
+// ErrCeremonyUnbound reports a ceremony carrying no origin, which a ceremony
+// from a Begin function always does. It is a fail-closed guard against a
+// Ceremony assembled some other way, never a condition a caller can reach.
+var ErrCeremonyUnbound = errors.New("auth/webauthn: the ceremony is not bound to an origin")
+
+// ValidateRPID reports whether id is a legal relying-party ID: a lowercase
+// domain name with no scheme, port or path, not an IP address, and not a
+// single label other than localhost. A refusal matches [ErrIllegalRPID].
+//
+// The lowercase requirement is this package's own: the upstream validator
+// accepts "Example.COM", but the relying-party hash is computed over the
+// configured bytes, so whether a mixed-case ID ever verifies depends on the
+// client, and a configured value must not.
+func ValidateRPID(id string) error {
+	if err := protocol.ValidateRPID(id); err != nil {
+		return fmt.Errorf("%w %q: %w", ErrIllegalRPID, id, err)
+	}
+	if lower := strings.ToLower(id); id != lower {
+		return fmt.Errorf("%w %q: the value must be spelled in lowercase, as %q", ErrIllegalRPID, id, lower)
+	}
+	return nil
+}
+
 // New creates a configured [RelyingParty]. An RPConfig with an empty ID is
-// rejected here with an error naming the field: upstream go-webauthn constructs
-// successfully without an RP ID and then fails every ceremony with an RP-hash
-// mismatch, which defeats this wrapper's purpose of making the relying party
-// legible at construction.
+// rejected here with an error naming the field, and an illegal ID with one
+// matching [ErrIllegalRPID], so a misconfigured relying party surfaces at
+// construction rather than as a failed ceremony. An Origins entry that is not a
+// usable origin, or that the origin policy would refuse, is rejected with a
+// *[OriginsError] naming the entry.
 func New(rp RPConfig) (*RelyingParty, error) {
 	if rp.ID == "" {
 		return nil, errors.New("auth/webauthn: RPConfig.ID is required")
 	}
-	wa, err := gowebauthn.New(&gowebauthn.Config{
-		RPID:          rp.ID,
-		RPDisplayName: rp.DisplayName,
-		RPOrigins:     rp.Origins,
-		Timeouts: gowebauthn.TimeoutsConfig{
-			Login: gowebauthn.TimeoutConfig{
-				Enforce:    true,
-				Timeout:    CeremonyTimeout,
-				TimeoutUVD: CeremonyTimeout,
-			},
-			Registration: gowebauthn.TimeoutConfig{
-				Enforce:    true,
-				Timeout:    CeremonyTimeout,
-				TimeoutUVD: CeremonyTimeout,
-			},
-		},
-	})
-	if err != nil {
+	if err := ValidateRPID(rp.ID); err != nil {
 		return nil, err
 	}
-	return &RelyingParty{wa: wa}, nil
+	r := &RelyingParty{id: rp.ID, displayName: rp.DisplayName}
+	for i, entry := range rp.Origins {
+		o, err := parseOrigin(entry)
+		if err == nil {
+			err = r.policy(o)
+		}
+		if err != nil {
+			return nil, &OriginsError{Err: err, Entry: entry, RPID: rp.ID, Index: i}
+		}
+		r.origins = append(r.origins, o)
+	}
+	return r, nil
 }
 
 // ErrNotDiscoverable reports a registration whose client stated the new
@@ -407,15 +532,27 @@ var ErrNotDiscoverable = errors.New("auth/webauthn: authenticator did not create
 // internals. A test pins that.
 var ErrUnknownCredential = errors.New("auth/webauthn: the asserted credential is not registered")
 
-// BeginRegistration starts a WebAuthn registration ceremony.
+// BeginRegistration starts a WebAuthn registration ceremony at origin, the
+// browser origin the request arrived from (see [ParseOrigin]). The origin must
+// pass [RelyingParty.CheckOrigin], whose *[OriginError] is returned unchanged
+// otherwise, and is bound into the ceremony: the response is verified against
+// exactly that origin.
 //
 // The credential parameters offer the three ML-DSA parameter sets ahead of
 // EdDSA, ES256 and RS256, so an authenticator that implements a post-quantum
 // algorithm produces a post-quantum credential and every authenticator in
 // current use still registers on a classical one. Verifying an ML-DSA
 // signature needs Go 1.27, which this module already requires.
-func BeginRegistration(rp *RelyingParty, user *User) (*CredentialCreation, Ceremony, error) {
-	options, session, err := rp.wa.BeginRegistration(&userAdapter{User: user},
+func BeginRegistration(rp *RelyingParty, user *User, origin Origin) (*CredentialCreation, Ceremony, error) {
+	if err := rp.CheckOrigin(origin); err != nil {
+		return nil, Ceremony{}, err
+	}
+	wa, err := rp.handleFor(origin.String())
+	if err != nil {
+		return nil, Ceremony{}, err
+	}
+	options, session, err := wa.BeginRegistration(&userAdapter{User: user},
+		gowebauthn.WithRegistrationOrigin(origin.String()),
 		gowebauthn.WithCredentialParameters(gowebauthn.CredentialParametersPQCRecommendedL3()),
 		gowebauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
 			ResidentKey:      protocol.ResidentKeyRequirementRequired,
@@ -430,7 +567,9 @@ func BeginRegistration(rp *RelyingParty, user *User) (*CredentialCreation, Cerem
 	return creationFromUpstream(options, user.WebAuthnID()), Ceremony{data: session}, nil
 }
 
-// FinishRegistration completes a WebAuthn registration ceremony.
+// FinishRegistration completes a WebAuthn registration ceremony. The response
+// is verified against the origin the ceremony was begun at; a ceremony that
+// carries none fails with [ErrCeremonyUnbound].
 //
 // A credential the client reports as non-discoverable is rejected with
 // [ErrNotDiscoverable] instead of being returned for storage. [BeginLogin] and
@@ -438,9 +577,15 @@ func BeginRegistration(rp *RelyingParty, user *User) (*CredentialCreation, Cerem
 // never complete a login: storing it gives the user a passkey in their list
 // that fails every time they select it. The check reads the typed credProps
 // output [BeginRegistration] requests, and an authenticator that reports
-// nothing is accepted, because absence is not a denial.
+// nothing is accepted, because absence is not a denial. Absence is also what a
+// client that does not forward clientExtensionResults produces, so a consumer
+// that wants the check to fire must forward them.
 func FinishRegistration(rp *RelyingParty, user *User, ceremony Ceremony, response *http.Request) (*auth.PasskeyCredential, error) {
-	cred, err := rp.wa.FinishRegistration(&userAdapter{User: user}, *ceremony.data, response)
+	wa, err := rp.boundHandle(ceremony)
+	if err != nil {
+		return nil, err
+	}
+	cred, err := wa.FinishRegistration(&userAdapter{User: user}, *ceremony.data, response)
 	if err != nil {
 		return nil, err
 	}
@@ -471,11 +616,27 @@ func rejectNonDiscoverable(cred *gowebauthn.Credential) error {
 	return nil
 }
 
-// BeginLogin starts a WebAuthn assertion ceremony (discoverable login).
-func BeginLogin(rp *RelyingParty) (*CredentialAssertion, Ceremony, error) {
-	return beganCeremony(rp.wa.BeginDiscoverableLogin(
+// BeginLogin starts a WebAuthn assertion ceremony (discoverable login) at
+// origin, which must pass [RelyingParty.CheckOrigin] and is bound into the
+// ceremony exactly as in [BeginRegistration].
+func BeginLogin(rp *RelyingParty, origin Origin) (*CredentialAssertion, Ceremony, error) {
+	wa, err := rp.loginHandle(origin)
+	if err != nil {
+		return nil, Ceremony{}, err
+	}
+	return beganCeremony(wa.BeginDiscoverableLogin(
+		gowebauthn.WithLoginOrigin(origin.String()),
 		gowebauthn.WithUserVerification(protocol.VerificationRequired),
 	))
+}
+
+// loginHandle is the shared front half of the two login flavours: the origin
+// check, then the handle for that one origin.
+func (rp *RelyingParty) loginHandle(origin Origin) (*gowebauthn.WebAuthn, error) {
+	if err := rp.CheckOrigin(origin); err != nil {
+		return nil, err
+	}
+	return rp.handleFor(origin.String())
 }
 
 // beganCeremony wraps an upstream Begin* result so each ceremony function stays
@@ -488,9 +649,16 @@ func beganCeremony(options *protocol.CredentialAssertion, session *gowebauthn.Se
 }
 
 // BeginConditionalLogin starts a WebAuthn assertion ceremony with conditional
-// mediation, enabling browser autofill UI for passkeys.
-func BeginConditionalLogin(rp *RelyingParty) (*CredentialAssertion, Ceremony, error) {
-	return beganCeremony(rp.wa.BeginDiscoverableMediatedLogin(protocol.MediationConditional,
+// mediation, enabling browser autofill UI for passkeys, at origin, which must
+// pass [RelyingParty.CheckOrigin] and is bound into the ceremony exactly as in
+// [BeginRegistration].
+func BeginConditionalLogin(rp *RelyingParty, origin Origin) (*CredentialAssertion, Ceremony, error) {
+	wa, err := rp.loginHandle(origin)
+	if err != nil {
+		return nil, Ceremony{}, err
+	}
+	return beganCeremony(wa.BeginDiscoverableMediatedLogin(protocol.MediationConditional,
+		gowebauthn.WithLoginOrigin(origin.String()),
 		gowebauthn.WithUserVerification(protocol.VerificationRequired),
 	))
 }
@@ -513,9 +681,15 @@ func finishLogin(wa *gowebauthn.WebAuthn, session *gowebauthn.SessionData, respo
 // app-specific state) before creating a session. A ceremony failure caused by
 // a credential deleted server-side surfaces as a wrapped
 // [protocol.ErrorUnknownCredential], matchable with errors.As so callers can
-// signal the client to forget the stale passkey.
+// signal the client to forget the stale passkey. The assertion is verified
+// against the origin the ceremony was begun at; a ceremony that carries none
+// fails with [ErrCeremonyUnbound].
 func CompleteLogin(ctx context.Context, rp *RelyingParty, store Store, ceremony Ceremony, r *http.Request) (*auth.User, error) {
-	resolved, cred, err := finishLogin(rp.wa, ceremony.data, r, storeUserFinder(ctx, store))
+	wa, err := rp.boundHandle(ceremony)
+	if err != nil {
+		return nil, err
+	}
+	resolved, cred, err := finishLogin(wa, ceremony.data, r, storeUserFinder(ctx, store))
 	if err != nil {
 		return nil, translateAssertionError(err)
 	}

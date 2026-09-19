@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cplieger/auth/v5"
-	"github.com/cplieger/auth/v5/authtest"
+	"github.com/cplieger/auth/v6"
+	"github.com/cplieger/auth/v6/authtest"
 )
 
 func TestMemStore_implements_AuthenticatorStore(t *testing.T) {

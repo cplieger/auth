@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/cplieger/auth/v5"
+	"github.com/cplieger/auth/v6"
 	"github.com/go-webauthn/webauthn/protocol"
 	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
 )
@@ -23,7 +23,8 @@ func TestCreationOptions_serializesLikeUpstream(t *testing.T) {
 	rp := testRelyingParty(t)
 	user := &User{AuthUser: &auth.User{ID: 42, Username: "alex", DisplayName: "Alex", WebAuthnHandle: auth.GenerateWebAuthnHandle()}}
 
-	upstream, _, err := rp.wa.BeginRegistration(&userAdapter{User: user},
+	upstream, _, err := testHandle(t, rp).BeginRegistration(&userAdapter{User: user},
+		gowebauthn.WithRegistrationOrigin(testOrigin),
 		gowebauthn.WithCredentialParameters(gowebauthn.CredentialParametersPQCRecommendedL3()),
 		gowebauthn.WithAuthenticatorSelection(upstreamSelection()),
 		gowebauthn.WithExclusions(gowebauthn.Credentials((&userAdapter{User: user}).WebAuthnCredentials()).CredentialDescriptors()),
@@ -41,7 +42,8 @@ func TestRequestOptions_serializesLikeUpstream(t *testing.T) {
 	t.Parallel()
 	rp := testRelyingParty(t)
 
-	upstream, _, err := rp.wa.BeginDiscoverableLogin(
+	upstream, _, err := testHandle(t, rp).BeginDiscoverableLogin(
+		gowebauthn.WithLoginOrigin(testOrigin),
 		gowebauthn.WithUserVerification("required"),
 	)
 	if err != nil {
@@ -60,7 +62,8 @@ func TestRequestOptions_serializesLikeUpstream_conditional(t *testing.T) {
 	t.Parallel()
 	rp := testRelyingParty(t)
 
-	upstream, _, err := rp.wa.BeginDiscoverableMediatedLogin(protocol.MediationConditional,
+	upstream, _, err := testHandle(t, rp).BeginDiscoverableMediatedLogin(protocol.MediationConditional,
+		gowebauthn.WithLoginOrigin(testOrigin),
 		gowebauthn.WithUserVerification("required"),
 	)
 	if err != nil {
@@ -88,7 +91,8 @@ func TestCreationOptions_serializesLikeUpstream_withExcludedCredential(t *testin
 		},
 	}
 
-	upstream, _, err := rp.wa.BeginRegistration(&userAdapter{User: user},
+	upstream, _, err := testHandle(t, rp).BeginRegistration(&userAdapter{User: user},
+		gowebauthn.WithRegistrationOrigin(testOrigin),
 		gowebauthn.WithCredentialParameters(gowebauthn.CredentialParametersPQCRecommendedL3()),
 		gowebauthn.WithAuthenticatorSelection(upstreamSelection()),
 		gowebauthn.WithExclusions(gowebauthn.Credentials((&userAdapter{User: user}).WebAuthnCredentials()).CredentialDescriptors()),
@@ -172,6 +176,19 @@ func testRelyingParty(t *testing.T) *RelyingParty {
 		t.Fatalf("New: %v", err)
 	}
 	return rp
+}
+
+const testOrigin = "https://example.com"
+
+// testHandle is the upstream oracle for one ceremony at testOrigin, which is
+// what every Begin function builds for the origin it is handed.
+func testHandle(t *testing.T, rp *RelyingParty) *gowebauthn.WebAuthn {
+	t.Helper()
+	wa, err := rp.handleFor(testOrigin)
+	if err != nil {
+		t.Fatalf("handleFor(%q): %v", testOrigin, err)
+	}
+	return wa
 }
 
 func upstreamSelection() protocol.AuthenticatorSelection {
