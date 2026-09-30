@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
   "lastUpdate": 1790732682229,
-  "repoUrl": "https://github.com/cplieger/ci",
+  "repoUrl": "https://github.com/cplieger/auth",
   "entries": {
     "Benchmark": [
       {
@@ -482,10 +482,10 @@ window.BENCHMARK_DATA = {
             "username": "web-flow",
             "email": "noreply@github.com"
           },
-          "id": "48d1c682390d6a54c634f3df4594be7c938087f9",
-          "message": "chore(deps): update cplieger/ci digest to 1cc06fd (#659)",
-          "timestamp": "2026-09-24T22:02:23Z",
-          "url": "https://github.com/cplieger/ci/commit/48d1c682390d6a54c634f3df4594be7c938087f9"
+          "id": "7f2a4287c9c2626a94cfc792a13e0607d2165735",
+          "message": "chore(sync): synced file(s) with cplieger/ci (#483)\n\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-09-25T07:22:51Z",
+          "url": "https://github.com/cplieger/auth/commit/7f2a4287c9c2626a94cfc792a13e0607d2165735"
         },
         "date": 1790732681768,
         "tool": "customSmallerIsBetter",
