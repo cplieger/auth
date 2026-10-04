@@ -107,7 +107,9 @@ type AAGUIDEntry struct {
 	Name string
 }
 
-// KnownAAGUIDs is the registry of known authenticator AAGUIDs.
+// KnownAAGUIDs is the registry of known authenticator AAGUIDs. The name lookup
+// is built from it once at package init, so changing it afterwards has no
+// effect.
 var KnownAAGUIDs = []AAGUIDEntry{
 	{"ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4", "Google Password Manager"},
 	{aaguidChromeOnMac, credNameChromeOnMac},
@@ -668,22 +670,13 @@ func finishLogin(wa *gowebauthn.WebAuthn, session *gowebauthn.SessionData, respo
 	return wa.FinishPasskeyLogin(userFinder, *session, response)
 }
 
-// CompleteLogin completes a discoverable (passkey) login ceremony against the
-// store: it resolves the asserting user and registered credentials from the
-// assertion's user handle, verifies the assertion response, and persists the
-// post-login credential custody (sign count and authenticator flags, the
-// cloned-authenticator detection state).
-//
-// The custody write is best-effort: a store failure is logged at Warn and does
-// not fail the login (sign-count bookkeeping is clone *detection*, not part of
-// assertion verification). The returned user is the account as stored — the
-// caller owns account-status policy and MUST check User.Enabled (and any
-// app-specific state) before creating a session. A ceremony failure caused by
-// a credential deleted server-side surfaces as a wrapped
-// [protocol.ErrorUnknownCredential], matchable with errors.As so callers can
-// signal the client to forget the stale passkey. The assertion is verified
-// against the origin the ceremony was begun at; a ceremony that carries none
-// fails with [ErrCeremonyUnbound].
+// CompleteLogin verifies a discoverable (passkey) assertion against the
+// origin the ceremony was begun at and persists the credential's sign count
+// and flags; a store failure there is logged at Warn and does not fail the
+// login. The caller MUST check User.Enabled before creating a session. A
+// deleted credential returns [ErrUnknownCredential] (errors.Is), so the
+// client can forget the stale passkey; a ceremony with no origin returns
+// [ErrCeremonyUnbound].
 func CompleteLogin(ctx context.Context, rp *RelyingParty, store Store, ceremony Ceremony, r *http.Request) (*auth.User, error) {
 	wa, err := rp.boundHandle(ceremony)
 	if err != nil {

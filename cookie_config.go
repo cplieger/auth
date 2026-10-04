@@ -23,8 +23,9 @@ const (
 	// Uses a non-prefixed name, no Secure flag. Explicitly opt-in only.
 	PostureInsecureLAN
 
-	// PostureForceSecure forces Secure flag even behind a TLS-terminating proxy
-	// where r.TLS is nil. Requires TrustForwardedHeaders=true to detect HTTPS.
+	// PostureForceSecure sets the __Host- prefix and Secure on every request
+	// without consulting the request scheme, so it behaves as PostureSecure,
+	// including behind a TLS-terminating proxy where r.TLS is nil.
 	PostureForceSecure
 
 	// PosturePerRequest selects the cookie name and Secure flag per request,
