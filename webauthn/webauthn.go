@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -35,12 +36,6 @@ type Store interface {
 	UpdatePasskeyAfterLogin(ctx context.Context, credID []byte, signCount uint32, flags auth.PasskeyFlags) error
 	UserByWebAuthnHandle(ctx context.Context, handle []byte) (user *auth.User, found bool, err error)
 }
-
-const (
-	credNameWindowsHello = "Windows Hello"
-	credNameChromeOnMac  = "Chrome on Mac" //nolint:gosec // G101 false positive: authenticator display name, not a credential
-	aaguidChromeOnMac    = "adce0002-35bc-c60a-648b-0b25f1f05503"
-)
 
 // User adapts auth.User + credentials to the gowebauthn.User interface.
 type User struct {
@@ -107,27 +102,14 @@ type AAGUIDEntry struct {
 	Name string
 }
 
-// KnownAAGUIDs is the registry of known authenticator AAGUIDs. The name lookup
-// is built from it once at package init, so changing it afterwards has no
-// effect.
-var KnownAAGUIDs = []AAGUIDEntry{
-	{"ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4", "Google Password Manager"},
-	{aaguidChromeOnMac, credNameChromeOnMac},
-	{"08987058-cadc-4b81-b6e1-30de50dcbe96", credNameWindowsHello},
-	{"9ddd1817-af5a-4672-a2b9-3e3dd95000a9", credNameWindowsHello},
-	{"6028b017-b1d4-4c02-b4b3-afcdafc96bb2", credNameWindowsHello},
-	{"dd4ec289-e01d-41c9-bb89-70fa845d4bf2", "iCloud Keychain"},
-	{"fbfc3007-154e-4ecc-8c0b-6e020557d7bd", "iCloud Keychain"},
-	{"d548826e-79b4-db40-a3d8-11116f7e8349", "Bitwarden"},
-	{"b5397723-31d4-4c13-b037-37be46e30e9e", "1Password"},
-	{"bada5566-a7aa-401f-bd96-45619a55120d", "1Password"},
-	{"2fc0579f-8113-47ea-b116-bb5a8db9202a", "YubiKey 5"},
-	{"fa2b99dc-9e39-4257-8f92-4a30d23c4118", "YubiKey 5 NFC"},
-}
+// KnownAAGUIDs lists the authenticators [AuthenticatorName] can name.
+//
+// Deprecated: use AuthenticatorName. Changing this slice has no effect.
+var KnownAAGUIDs = slices.Clone(knownAAGUIDTable)
 
 var knownAAGUIDMap = func() map[string]string {
-	m := make(map[string]string, len(KnownAAGUIDs))
-	for _, e := range KnownAAGUIDs {
+	m := make(map[string]string, len(knownAAGUIDTable))
+	for _, e := range knownAAGUIDTable {
 		m[e.UUID] = e.Name
 	}
 	return m
@@ -147,6 +129,15 @@ func formatAAGUID(aaguid []byte) string {
 		return ""
 	}
 	return uuid.UUID(aaguid).String()
+}
+
+// AuthenticatorName returns the passkey provider name for a 16-byte AAGUID,
+// from the community list at
+// https://github.com/passkeydeveloper/passkey-authenticator-aaguids. It
+// reports false for an unknown AAGUID or one that is not 16 bytes long.
+func AuthenticatorName(aaguid []byte) (string, bool) {
+	name, ok := knownAAGUIDMap[formatAAGUID(aaguid)]
+	return name, ok
 }
 
 // nameSuffix reports whether name is a label PasskeyFriendlyName derives from
@@ -195,8 +186,7 @@ func nextNameSuffix(existingNames []string, base string) int {
 // highest already in use, so deleting a passkey that leaves a numbering gap
 // never yields a duplicate label.
 func PasskeyFriendlyName(aaguid []byte, existingNames []string) string {
-	aaguidKey := formatAAGUID(aaguid)
-	baseName, known := knownAAGUIDMap[aaguidKey]
+	baseName, known := AuthenticatorName(aaguid)
 	if !known {
 		return fmt.Sprintf("Passkey %d", nextNameSuffix(existingNames, "Passkey"))
 	}
