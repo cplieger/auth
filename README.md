@@ -2,13 +2,22 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/cplieger/auth/v6.svg)](https://pkg.go.dev/github.com/cplieger/auth/v6) [![Go version](https://img.shields.io/github/go-mod/go-version/cplieger/auth)](https://github.com/cplieger/auth/blob/main/go.mod) [![Mutation](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/cplieger/auth/badges/mutation.json)](https://github.com/cplieger/auth/issues?q=label%3Agremlins-tracker)
 
-> Go authentication library: Argon2id passwords, WebAuthn/passkeys, OIDC, sessions, API keys, and RBAC.
+auth gives your Go web service its login building blocks: Argon2id passwords, passkeys, OIDC sign-in, sessions, API keys and CSRF tokens. You write the HTTP handlers and the storage.
 
-A standalone Go authentication library providing password hashing (Argon2id with OWASP parameters), WebAuthn/FIDO2 passkey ceremonies, OIDC provider integration with PKCE, session management with idle/absolute timeouts, API key generation and verification, CSRF token helpers, password-reset/email-verification token primitives, and role-based access control helpers.
+It replaces the hashing, token, cookie and passkey code you would otherwise assemble around `net/http`. It reads no environment variables, and every setting lives on the value you construct. It needs Go 1.27 or later and is licensed under Apache-2.0. It has five direct dependencies at run time: `golang.org/x/crypto`, `golang.org/x/oauth2`, `golang.org/x/text`, `go-webauthn/webauthn` and `coreos/go-oidc`.
 
-Dependencies: `golang.org/x/crypto`, `golang.org/x/oauth2`, `golang.org/x/text`, `github.com/go-webauthn/webauthn`, `github.com/coreos/go-oidc/v3`.
+## Why use it
 
-**Note:** HTTP handlers are app-specific and intentionally not included. Build your own HTTP layer on the exported primitives.
+auth is built for a Go service that owns its login pages and database.
+
+- Passwords hash with Argon2id at OWASP's parameters, with an optional HMAC pepper and a `DummyHash` that evens out login timing.
+- Your store keeps only the SHA-256 hash of each 256-bit random session token. The cookie holds only the token, so it needs no encryption or signing.
+- Passkey ceremonies check each browser origin against the relying-party ID, and the API exposes no go-webauthn type.
+- OIDC sign-in sends a PKCE S256 challenge and checks the ID token's nonce.
+- Secrets are compared in constant time.
+- You implement only the storage interfaces for the features you use, and `authtest` is an in-memory test store.
+
+Consider [Authboss](https://github.com/aarondl/authboss) if you want ready-made registration, recovery and two-factor flows with HTML or JSON views. Consider [Ory Kratos](https://github.com/ory/kratos) if you want identity as a separate server with login, recovery and multi-factor flows over HTTP APIs.
 
 ## Install
 
@@ -18,222 +27,160 @@ go get github.com/cplieger/auth/v6@latest
 
 ## Usage
 
+An `Authenticator` guards a route. Its store is your implementation of `auth.AuthenticatorStore`, and this example uses the in-memory test store instead.
+
 ```go
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/cplieger/auth/v6"
+	"github.com/cplieger/auth/v6/authtest"
 )
 
 func main() {
-	// Hash a password (package-level with OWASP defaults)
-	hash := auth.HashPassword("my-secure-password")
+	store := authtest.NewMemStore() // use your database-backed store here
 
-	// Verify
-	ok, _ := auth.VerifyPassword("my-secure-password", hash)
-	_ = ok
-
-	// Or use a configurable Hasher with custom params and optional pepper
-	hasher, _ := auth.NewHasher(auth.Argon2Params{
-		Memory: 65536, Iterations: 3, Parallelism: 2,
-		SaltLength: 16, KeyLength: 32,
-	}, auth.WithPepper([]byte("my-secret-pepper")))
-	hash2 := hasher.Hash("my-secure-password")
-	ok2, _ := hasher.Verify("my-secure-password", hash2)
-	_, _ = hash2, ok2
-
-	// Set up authenticator with your store implementation (functional options).
-	// auth.New returns an error if the configuration is unusable (e.g. a
-	// __Host- cookie posture combined with a Domain or a non-root Path).
-	authenticator, err := auth.New(
-		myStore, // implements auth.AuthenticatorStore
-		auth.WithIdleTimeout(1*time.Hour),
+	authn, err := auth.New(store,
+		auth.WithIdleTimeout(time.Hour),
 		auth.WithAbsTimeout(24*time.Hour),
-		auth.WithLoginPath("/login"),
 		auth.WithCookie(auth.DefaultCookieConfig()),
 	)
 	if err != nil {
-		log.Fatalf("auth: %v", err)
+		log.Fatal(err) // the cookie or timeout settings cannot work
 	}
 
-	// Use in HTTP handler
-	http.HandleFunc("/api/protected", func(w http.ResponseWriter, r *http.Request) {
-		user, _, ok := authenticator.RequireAuth(w, r)
+	http.HandleFunc("/api/me", func(w http.ResponseWriter, r *http.Request) {
+		user, _, ok := authn.RequireAuth(w, r) // the second value is the session hash
 		if !ok {
-			return
+			return // RequireAuth has already answered
 		}
-		_ = user
+		fmt.Fprintln(w, user.Username)
 	})
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 ```
 
-## Configuration
+`RequireAuth` redirects a browser to `/login`, or to the path you set with `WithLoginPath`, and answers any other client with a 401 JSON body. It reads the session cookie first, then the `X-Api-Key` header.
 
-All configuration is via functional options and function parameters. The library has no import-time side effects, no environment reads, and no global state.
-
-- `WithLogger(l)`: optional `*slog.Logger`; if nil, uses `slog.Default()`
-- `WithLoginPath(path)`: redirect path for unauthenticated browser requests (default: `"/login"`)
-- `WithCookie(cfg)`: configurable cookie Name, Posture, Path, SameSite, Domain, TrustForwardedHeaders (see `CookieConfig`)
-- `WithIdleTimeout(d)`: session idle timeout (default: 1h)
-- `WithAbsTimeout(d)`: session absolute timeout (default: 24h)
-- `WithBypass(fn)`: development bypass hook (synthetic admin user); a production-safety warning fires once, on the first request the hook actually grants
-- `WithVerifiers(vs []CredentialVerifier)`: replace the default verifier chain (`SessionVerifier` + `APIKeyVerifier`) with your own
-- `WithActivityThrottle(d time.Duration)`: call `UpdateSessionActivity` at most once per `d` per session instead of on every request (default `0`: write on every request). `d` must be less than the idle timeout or construction returns an error, since the persisted last-activity lags by up to `d`.
-- `WithUnauthorizedResponse(fn)`: replace `RequireAuth`'s default unauthorized response (302 to the login path for browsers, 401 JSON otherwise) with your own writer. The hook owns both branches; call `IsBrowserRequest` inside it to keep a redirect path.
-- `WithTimeoutSource(fn)`: resolve the idle/absolute session timeouts per verification from a callback (for hot-reloadable config). Non-positive callback values fall back to the static options; the activity throttle is clamped to half the resolved idle timeout so a shrunken idle cannot expire active sessions.
-- `NewHasher(params, ...HasherOption)`: configurable Argon2id parameters; use `WithPepper([]byte)` for HMAC peppering
-- `GenerateAPIKey(prefix)`: pass your key prefix (e.g. `"ak_"`)
-- `ValidatePasswordContext(password, PasswordContext{Username, ForbiddenWords})`: pass app-specific forbidden words
-
-### Cookie Configuration
+Signing in is your handler. This one checks a password and starts a session. Here `store` implements `auth.UserStore` and `auth.SessionPersister`, and `cookie` is the `CookieConfig` you pass to `WithCookie`.
 
 ```go
-cfg := auth.CookieConfig{
-    Name:     "my_session",          // base name (default: "auth_session")
-    Posture:  auth.PostureSecure,    // __Host- + Secure (default); see CookiePosture table below
-    Path:     "/",                   // cookie path (default: "/")
-    Domain:   "",                    // cookie domain (default: unset; must stay unset under a __Host- posture)
-    SameSite: http.SameSiteLaxMode,  // (default: Lax)
-    // TrustForwardedHeaders: true,  // only behind a proxy that always sets X-Forwarded-Proto
-}
-authenticator, err := auth.New(myStore, auth.WithCookie(cfg))
-if err != nil {
-    log.Fatalf("auth: %v", err) // cfg rejected: see CookieConfig.Validate
+func signIn(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	name, err := auth.NormalizeUsername(r.FormValue("username"))
+	if err != nil {
+		http.Error(w, "sign-in failed", http.StatusUnauthorized)
+		return
+	}
+	user, found, err := store.UserByUsername(ctx, name)
+	if err != nil {
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	hash := auth.DummyHash() // the same work for an unknown username
+	if found {
+		hash = user.PasswordHash
+	}
+	ok, err := auth.VerifyPassword(r.FormValue("password"), hash)
+	if err != nil || !ok || !found || !user.Enabled {
+		http.Error(w, "sign-in failed", http.StatusUnauthorized)
+		return
+	}
+	token, tokenHash := auth.GenerateSessionToken()
+	now := time.Now()
+	err = store.CreateSession(ctx, &auth.Session{
+		TokenHash: tokenHash, UserID: user.ID, AuthMethod: auth.MethodPassword,
+		CreatedAt: now, LastActivity: now,
+	})
+	if err != nil {
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	cookie.SetCookie(w, r, token, 0)
+	http.Redirect(w, r, auth.ValidateRedirectURI(r.FormValue("next")), http.StatusSeeOther)
 }
 ```
 
-#### CookiePosture
-
-`CookiePosture` controls the cookie name prefix and Secure flag strategy:
-
-| Value               | Behavior                                                                                                                                                                                                                             |
-|---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| (default)           | Static `__Host-` prefix when `Secure` is true/auto-HTTPS                                                                                                                                                                             |
-| `PosturePerRequest` | Selects the cookie name and Secure flag at request time: HTTPS requests get `__Host-`+base+`Secure`; plain HTTP gets the bare base name without the Secure flag. Respects `TrustForwardedHeaders` for `X-Forwarded-Proto` detection. |
-
-`PosturePerRequest` suits services that accept both HTTP and HTTPS traffic, such as a load balancer that terminates TLS for some paths but not others.
-
-## API
-
-Grouped summary of the exported surface. Signatures and full semantics live in the [Go Reference](https://pkg.go.dev/github.com/cplieger/auth/v6).
-
-- **Password hashing:** `HashPassword` / `VerifyPassword` / `NeedsRehash` (Argon2id PHC strings, OWASP defaults; `HashPassword` and `Hasher.Hash` return no error), `DummyHash` (constant-time timing equalization for unknown-user logins), `DefaultArgon2Params`, `NewHasher` + `WithPepper` (custom parameters, HMAC pepper), `Hasher.Hash` / `Hasher.Verify` / `Hasher.NeedsRehash`, `ValidateMultiFactorPasswordLength` / `ValidateSoloPasswordLength` (NIST, max 128; the solo variant applies the stricter minimum for accounts where password login is the sole factor), `ValidatePasswordContext`, `CheckBreachedPassword` (HIBP k-anonymity).
-- **Username identity:** `NormalizeUsername` decides whether two logins are the same account, using the `UsernameCaseMapped` profile of the PRECIS IdentifierClass (RFC 8265). It folds case across the whole of Unicode rather than ASCII only, does not transliterate (`straße` and `strasse` stay distinct), and rejects a username containing a space. Apply it on both sides of the comparison: to the unique-index key, and to the login input before the lookup.
-- **Sessions and tokens:** `GenerateSessionToken` (256-bit; returns no error, like `RotateSessionToken`, `GenerateAPIKey`, `GenerateOpaqueToken`, `oidc.GenerateState` and `oidc.GeneratePKCE`), `RotateSessionToken`, `ValidateSession` (takes a `SessionTimeouts{Idle, Absolute}` pair), `SessionHash`, `HexSHA256`, `CSRFToken` / `VerifyCSRFToken` (bound to the session hash), `GenerateOpaqueToken` / `VerifyOpaqueToken` (password reset, email verification).
-- **Cookies:** `DefaultCookieConfig`, then `CookieConfig.CookieName` / `SetCookie` / `ReadCookie` / `ClearCookie`. Declare the config your deployment needs rather than relying on a package default, so the posture is visible at the call site.
-- **API keys:** `GenerateAPIKey`, `VerifyAPIKey` (constant-time hash equality plus expiry check), `APIKeyHash`.
-- **Middleware and guards:** `New` and `NewSessionVerifier` (both return an error on an unusable config; see `CookieConfig.Validate`), `NewAPIKeyVerifier` (reads the `X-Api-Key` header only, never a URL query parameter, per CWE-598), `Authenticator.Authenticate` / `Authenticator.RequireAuth`, `HasRole` (flat RBAC), `ValidateRedirectURI` (relative paths only), `CanDisableMethod` (takes a `MethodAvailability` struct), `IsBrowserRequest`. The `WithVerifiers` / `WithActivityThrottle` / `WithUnauthorizedResponse` / `WithTimeoutSource` options are described under [Configuration](#configuration).
-- **Interfaces:** `CredentialVerifier` (pluggable credential verification), `AuthenticatorStore` (the composed read surface `New` takes: session, user and API-key lookup), `webauthn.Store` (consumer-implemented storage), and the persistence-SPI role interfaces `UserStore` / `SessionPersister` / `PasskeyStore` / `KeyStore` / `OIDCStateStore`. Implement the roles your handler layer needs. A by-key lookup returns a value the caller owns, so an in-memory or caching store must return a copy; a SQL-backed store satisfies this for free.
-  - Two lookups carry rules a store must follow, both stated in `store_contract.go`: `UserByUsername` is keyed on `NormalizeUsername` applied to BOTH the index and the login input, and `UserByWebAuthnHandle` resolves the opaque handle a discoverable login arrives with, answering the same way for an unknown handle and a malformed one so it cannot be used to probe which accounts exist.
-- **WebAuthn (`github.com/cplieger/auth/v6/webauthn`):** no go-webauthn type appears on this package's exported surface, so a consumer runs a ceremony without importing it. `New` takes an `RPConfig{ID, DisplayName, Origins}` and returns a `*RelyingParty` (`ID()` reports the relying-party identifier; `CheckOrigin` answers whether a browser origin may conduct a ceremony); `ValidateRPID` is the one legality predicate for a relying-party ID (a lowercase domain with no scheme, port or path, not an IP address, and no single label other than `localhost`), and every refusal it returns matches `ErrIllegalRPID`; `NewUser`; `BeginRegistration` / `BeginLogin` / `BeginConditionalLogin` (conditional mediation, autofill UI) each take the browser's `Origin` as their last argument; `FinishRegistration` / `CompleteLogin` (store-backed login completion; the caller keeps account-status policy and session creation) verify against the origin the ceremony was begun at.
-  - **The origin a ceremony expects is the origin it is begun at.** Parse the request's `Origin` header with `ParseOrigin`, hand the result to the `Begin*` call, and the response is verified against exactly that origin (scheme, host and port) by go-webauthn's own comparator, so no expected-origin list has to be enumerated in advance. `ParseOrigin` refuses rather than repairs: it folds ASCII case and elides a default port, because the comparator does the same, and it rejects a trailing dot, an empty label, a non-ASCII host, a path, a query, a fragment, userinfo and a non-`http(s)` scheme, each with its own `OriginRejection` on the returned `*OriginError`. A ceremony that carries no bound origin fails closed at Finish with `ErrCeremonyUnbound`.
-  - **`CheckOrigin` is the policy**, run at every `Begin*`: the scheme must be `https` (or `http` for `localhost`, the specification's exception), the host must be an IP-free domain equal to the relying-party ID or a proper subdomain of it (the suffix test requires the separating dot, so `evilexample.com` is not under `example.com`), and the port is unrestricted at Begin because a relying party behind a proxy cannot know the port a browser reaches it on. The port is still exact at Finish: it is carried into the bound origin, so a response declaring another port fails.
-  - **`RPConfig.Origins` is optional and only narrows.** Leave it nil to let the policy decide alone. Set it, and a presented origin must satisfy the policy AND equal one listed origin on scheme, host and port, both in `ParseOrigin`'s canonical form; a miss is `RejectNotAllowlisted`. `New` parses every entry and refuses the relying party with an `*OriginsError` (naming the entry, its index and the reason) when an entry is not a usable origin or the policy itself would reject it, so a list can never widen the policy. Pin the list to your own origin when hosts you do not control share the registrable domain: the browser permits any host under the relying-party ID to request an assertion, and the list is the only place at the WebAuthn layer that refuses one from a sibling.
-  - The `Begin*` calls return a `Ceremony`, an opaque handle a consumer holds between the two halves of a ceremony and evicts on `Ceremony.Expires()`, plus first-party `CredentialCreation` / `CredentialAssertion` options that restate the WebAuthn §5.4 and §5.5 dictionaries and serialize exactly as the browser expects.
-  - `FinishRegistration` returns an `auth.PasskeyCredential` ready to store; set its `Name` from `PasskeyFriendlyName` first, which derives a name from the AAGUID against the user's existing passkey names.
-  - Registration requires a discoverable credential with user verification, and offers the ML-DSA post-quantum algorithms ahead of EdDSA, ES256 and RS256, so an authenticator that implements one produces a post-quantum credential. `ErrNotDiscoverable` reports a credential the client says is not discoverable, because only a discoverable credential can complete `BeginLogin`; `ErrUnknownCredential` reports a login by a passkey deleted server-side, translated rather than wrapped so the upstream error type is not reachable.
-  - `NewSignals(rpID, user)` derives the WebAuthn Signal API payloads a client sends to keep a credential manager's passkey list in step with the server. An empty accepted-credential list is meaningful — it tells the credential manager to remove every passkey for the account — so it always serializes as `[]`.
-- **OIDC (`github.com/cplieger/auth/v6/oidc`):** `NewProvider` and `ValidateConfig` (both take an `oidc.Config`), `GenerateState`, `GeneratePKCE` (S256; both mint their results as the distinct types below), `Provider.AuthorizationURL` and `Provider.Exchange` (distinct `State` / `Nonce` / `CodeChallenge` / `Code` / `CodeVerifier` string types keep the opaque randoms from being transposed; `State`, `Nonce`, and `CodeVerifier` are aliases of the root `auth.OIDCState` / `auth.OIDCNonce` / `auth.OIDCCodeVerifier` types used by the `OIDCStateStore` SPI. AuthorizationURL rejects an empty state or code challenge and Exchange rejects an empty or mismatched nonce, both failing closed with descriptive errors, and a nonce mismatch reports `ErrNonceMismatch`), `ResolveUser` (maps an OIDC identity by issuer and subject to a user; `ErrNoUsername` when the token carries neither `preferred_username` nor `email`).
-
-## Subpackages
-
-### `auth/ratelimit`
-
-Dual sliding-window per-IP + per-account authentication brute-force rate limiter (OWASP ASVS 2.2.1). Standard library only (`context`, `log/slog`, `sync`, `time`). The two dimension keys are distinct types (`ratelimit.ClientIP`, `ratelimit.Username`) so they cannot be transposed silently.
+The `ratelimit` package limits failed logins per IP address and per account. Check it before the password, record each failure, and reset it on success:
 
 ```go
 rl := ratelimit.New(ctx, ratelimit.DefaultConfig())
 defer func() {
-    // Bound the wait so a wedged prune goroutine surfaces as an error
-    // instead of hanging process shutdown.
-    sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-    if err := rl.Shutdown(sctx); err != nil {
-        log.Printf("ratelimit shutdown: %v", err)
-    }
+	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := rl.Shutdown(sctx); err != nil {
+		log.Printf("ratelimit shutdown: %v", err)
+	}
 }()
+
 ip, user := ratelimit.ClientIP(clientIP), ratelimit.Username(username)
 if allowed, retryAfter := rl.Allow(ip, user); !allowed {
-    // reject; retry after retryAfter
+	return fmt.Errorf("too many attempts, retry in %s", retryAfter)
 }
-// On each FAILED login attempt, record it so it counts toward the limit:
-rl.Record(ip, user)
-// On successful login, clear the failure counters:
-rl.Reset(ip, user)
+if !passwordOK {
+	rl.Record(ip, user) // count the failed attempt
+	return errSignInFailed
+}
+rl.Reset(ip, user) // clear the count after a successful sign-in
 ```
 
-### `auth/authtest`
+The package examples on pkg.go.dev show more cases, and `go test` keeps them true.
 
-Exported in-memory `AuthenticatorStore` implementation for consumer tests. Every read returns a fresh copy.
+## API
 
-```go
-store := authtest.NewMemStore()
-store.AddUser(&auth.User{Username: "test", Role: auth.RoleUser, Enabled: true})
-```
+- `HashPassword`, `VerifyPassword`, `NeedsRehash`, `DummyHash` and `NewHasher` hash passwords. `ValidateSoloPasswordLength`, `ValidateMultiFactorPasswordLength`, `ValidatePasswordContext` and `CheckBreachedPassword` check them.
+- `NormalizeUsername` maps a username to one canonical form, so `Müller` and `MÜLLER` sign in to the same account.
+- `GenerateSessionToken`, `RotateSessionToken`, `CSRFToken` and `GenerateOpaqueToken` make tokens, the last one for password-reset and email-verification links. `VerifyCSRFToken` and `VerifyOpaqueToken` check them, and `ValidateSession` checks a session's timeouts.
+- `CookieConfig` sets, reads and clears the session cookie. `GenerateAPIKey` and `VerifyAPIKey` handle API keys.
+- `New` builds the `Authenticator`. `HasRole`, `ValidateRedirectURI`, `CanDisableMethod` and `IsBrowserRequest` are the checks around it.
+- `UserStore`, `SessionPersister`, `PasskeyStore`, `KeyStore` and `OIDCStateStore` are the storage interfaces you implement.
+- The `webauthn` package runs passkey ceremonies, `oidc` runs OIDC sign-in, `ratelimit` limits failed logins, and `authtest` is an in-memory store for tests.
+
+The full reference is on [pkg.go.dev](https://pkg.go.dev/github.com/cplieger/auth/v6).
 
 ## Security
 
-The primitives here are hardened, but the security of a deployment depends on how they are
-wired. This library owns the mechanisms below; the consumer owns everything above them.
+auth hardens the building blocks, and the security of your service depends on how you wire them.
 
-- Argon2id with OWASP-recommended parameters and a per-hash random salt, optional HMAC
-  pepper. API keys, CSRF tokens, opaque tokens and password hashes are compared in
-  constant time.
-- Session cookies carry a 256-bit random token, stored only as its SHA-256 hash, so the
-  cookie value is not sensitive and needs no encryption or signing (see
-  [Unsupported by Design](#unsupported-by-design)).
-- Every parser that reads untrusted input — PHC strings, cookie configuration, API keys,
-  session and opaque tokens, OIDC responses, WebAuthn ceremony data — has a fuzz target.
-- What the library cannot enforce: that you call a verifier on every protected route, that
-  your cookie posture matches your TLS termination, or that your store returns a
-  caller-owned copy of a looked-up record (`store_contract.go`). A misconfigured store or
-  an unguarded route is not a failure this library can detect.
-- The cryptography here has had no independent third-party audit.
+- Each password hash has its own random salt. Password hashes, API keys, CSRF tokens and opaque tokens are compared in constant time.
+- The default cookie carries the `__Host-` prefix with the Secure, HttpOnly and SameSite=Lax attributes. With that prefix, leave `Domain` empty and `Path` at `/`, because `New` refuses any other value.
+- API keys are read from the `X-Api-Key` header only, never from a URL query parameter.
+- Fuzz targets cover password hashes and password checks, cookie settings, API keys, CSRF and opaque tokens, redirect paths, OIDC settings, the rate limiter, and WebAuthn origins and stored credentials.
+- `WithBypass` grants a synthetic admin user to every request while its callback returns true. Keep it off in production.
+- When hosts you do not control share your relying-party domain, set `RPConfig.Origins` to your own origin. [Passkeys](docs/webauthn.md#narrowing-the-policy-with-origins) explains why.
+- Three rules stay with you. Guard every protected route with `RequireAuth`, match your [cookie settings](docs/configuration.md#session-cookie) to where TLS ends, and return a copy of each record your store looks up. [Implementing the store](docs/storage.md) explains the last rule.
+- The cryptography has had no independent third-party audit.
 
-Report a vulnerability privately per
-[SECURITY.md](https://github.com/cplieger/.github/blob/main/SECURITY.md) rather than in a
-public issue.
+Report a vulnerability privately through the [security policy](https://github.com/cplieger/.github/blob/main/SECURITY.md), not in a public issue.
 
-## Unsupported by Design
+## Unsupported by design
 
-The following features are intentionally out of scope.
+These are left out on purpose. [Non-goals](docs/non-goals.md) gives the reason for each and what to use instead.
 
-| Feature                                | Rationale                                                                                                                                            |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Full OIDC token-refresh orchestration  | Library handles authentication, not long-lived API access. Consumer uses `oauth2.TokenSource`.                                                       |
-| Multi-provider OIDC registry           | Consumer instantiates multiple `OIDCProvider` instances.                                                                                             |
-| WebAuthn MDS verification              | Not supported: the ceremony functions own the RP configuration. See the note below.                                                                  |
-| OIDC back-channel logout               | Enterprise SSO feature beyond scope of auth-primitive library.                                                                                       |
-| Hierarchical RBAC / permission sets    | Library provides `HasRole` for flat role check. Use casbin/ory-keto for complex RBAC.                                                                |
-| Cookie encryption/signing              | Opaque-token architecture; cookie value is a random token, not sensitive data.                                                                       |
-| OIDC userinfo endpoint                 | ID token claims sufficient for authentication. Consumer can call `provider.UserInfo()`.                                                              |
-| WebAuthn attestation conveyance        | Default `none` is correct for most RPs per FIDO Alliance guidance.                                                                                   |
-| WebAuthn credential filtering (AAGUID) | Not supported: the ceremony functions own the RP configuration. See the note below.                                                                  |
-| Passkey well-known endpoints           | Browser/credential-manager concern, not server-auth-library concern.                                                                                 |
-| CSRF middleware (full HTTP layer)      | Library provides `CSRFToken`/`VerifyCSRFToken` primitives; full middleware is HTTP-framework-specific.                                               |
+- HTTP handlers and a full CSRF middleware, because both depend on your web framework.
+- OIDC token refresh, a registry of several providers, back-channel logout and the userinfo endpoint.
+- WebAuthn metadata-service verification, attestation conveyance, filtering authenticators by AAGUID, and the passkey well-known endpoints.
+- Role hierarchies and permission sets. Each user has one role, and `HasRole` passes when it matches the role a route needs or when the user is an admin.
+- Cookie encryption and signing, because the cookie holds only a random token.
 
-**On the two WebAuthn authenticator-policy rows.** Both are enforceable only where this
-library is the relying party, and a deployment that wants either one runs an identity
-provider — which then becomes the relying party and applies the policy itself, needing
-nothing from here. So there is no injection path and no plan for one: `New` owns the
-relying-party configuration deliberately, because a hole there is a hole in the type
-boundary the WebAuthn API section describes.
+The library has no TOTP or SMS second factor. A custom `CredentialVerifier` passed to `WithVerifiers` can add one.
 
-Nothing is lost that a later release cannot supply. The credential record persists the raw
-attestation and the AAGUID, so if a consumer ever is the sole identity authority for an
-organisation with an authenticator mandate, the answer is first-party `RPConfig` fields plus
-attestation conveyance — additive, and decided then. Note that AAGUID filtering also needs
-that conveyance to work at all: the AAGUID arrives unaltered only under `direct` or
-`enterprise`, and is stripped under the `none` default above.
+## Documentation
+
+- [Configuration](docs/configuration.md) lists every option and default, the cookie postures and the rate limiter's limits.
+- [Passwords, sessions and tokens](docs/primitives.md) covers each building block in detail, OIDC sign-in included.
+- [Implementing the store](docs/storage.md) lists the storage interfaces and the rules a store must follow.
+- [Passkeys](docs/webauthn.md) explains how ceremonies check origins and what registration requires.
+- [Non-goals](docs/non-goals.md) gives the reason for each feature left out.
 
 ## Contributing
 
-Issues and PRs are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
-conventions and how to run the checks locally.
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the security rules a change must keep and how to run the checks.
 
 ## Disclaimer
 
