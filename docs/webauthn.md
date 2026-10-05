@@ -40,7 +40,7 @@ When hosts you do not control share your registrable domain, set the list to you
 
 Each `Begin` call returns two values. `CredentialCreation` or `CredentialAssertion` holds the options for the browser, restating the WebAuthn dictionaries of sections 5.4 and 5.5, and serializes exactly as the browser expects. `Ceremony` is an opaque handle you keep between the two halves. Evict it from your ceremony store at `Ceremony.Expires()`, so the deadline the authenticator received and the one your store enforces stay the same.
 
-`FinishRegistration` returns an `auth.PasskeyCredential` ready to store. Set its `Name` first with `PasskeyFriendlyName`. It names a known passkey provider from its AAGUID, such as `Chrome on Mac`, and numbers the rest, such as `Passkey 2`, never repeating one of the user's existing names.
+`FinishRegistration` returns an `auth.PasskeyCredential` ready to store. Set its `Name` first with `PasskeyFriendlyName`. It names a known passkey provider from its AAGUID, such as `Chrome on Mac`, and numbers the rest, such as `Passkey 2`. It never repeats one of the user's existing names.
 
 The provider names come from the [passkey authenticator AAGUID list](https://github.com/passkeydeveloper/passkey-authenticator-aaguids), which the passkey developer community maintains. The package ships a copy, adds three authenticators the list lacks, and reads nothing over the network. Dependency-update pull requests refresh the copy, and each copy names the commit of the list it came from. `AuthenticatorName` returns the name for an AAGUID, and `false` when the AAGUID is unknown.
 
