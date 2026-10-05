@@ -180,7 +180,7 @@ The library has no TOTP or SMS second factor. A custom `CredentialVerifier` pass
 
 ## Contributing
 
-Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the security rules a change must keep and how to run the checks.
+Issues and pull requests are welcome. The [shared contributing rules](https://github.com/cplieger/.github/blob/main/CONTRIBUTING.md) apply.
 
 ## Disclaimer
 
