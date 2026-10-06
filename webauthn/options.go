@@ -236,7 +236,7 @@ type CredentialRequestOptions struct {
 
 // CredentialCreation is what a registration ceremony hands the browser. The
 // publicKey member is the name navigator.credentials.create() reads, so it is
-// the specification yielding rather than this fleet's JSON convention breaking.
+// the specification yielding rather than this module's JSON convention breaking.
 type CredentialCreation struct {
 	Response CredentialCreationOptions `json:"publicKey"`
 }
