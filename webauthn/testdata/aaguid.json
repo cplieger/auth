@@ -56,6 +56,9 @@
   "6d212b28-a2c1-4638-b375-5932070f62e9": {
     "name": "initial"
   },
+  "6d6f6e69-6361-4d33-a001-706173736b79": {
+    "name": "Monica Pass"
+  },
   "70617373-7761-6c6c-6669-646f32303236": {
     "name": "Passwall"
   },
@@ -163,6 +166,9 @@
   },
   "eaecdef2-1c31-5634-8639-f1cbd9c00a08": {
     "name": "KeePassDX"
+  },
+  "f1d0badc-0def-4f1d-8bad-c0def1d0badc": {
+    "name": "fidont"
   },
   "f3809540-7f14-49c1-a8b3-8f813b225541": {
     "name": "Enpass"
