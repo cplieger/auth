@@ -46,18 +46,18 @@ func FuzzGenerate_output_is_a_fixed_point(f *testing.F) {
 
 // sourceTable reads the entries back out of a generated file, so the test
 // checks what the Go compiler will see rather than the bytes renderSource wrote.
-func sourceTable(src []byte) ([]Entry, error) {
+func sourceTable(src []byte) ([]entry, error) {
 	f, err := parser.ParseFile(token.NewFileSet(), "aaguids_gen.go", src, parser.SkipObjectResolution)
 	if err != nil {
 		return nil, err
 	}
-	var entries []Entry
+	var entries []entry
 	ast.Inspect(f, func(n ast.Node) bool {
 		lit, ok := n.(*ast.CompositeLit)
 		if !ok || len(lit.Elts) != 2 {
 			return true
 		}
-		var e Entry
+		var e entry
 		for _, elt := range lit.Elts {
 			kv, ok := elt.(*ast.KeyValueExpr)
 			if !ok {

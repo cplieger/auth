@@ -1,7 +1,7 @@
-//go:build ignore
-
-// Command gen_aaguids regenerates aaguids_gen.go from the community list at
-// the commit aaguids_source.go pins; see internal/aaguidgen.
+// Command genaaguids regenerates webauthn/aaguids_gen.go from the community
+// list at the commit webauthn/aaguids_source.go pins; see internal/aaguidgen.
+// go generate runs it from the webauthn directory, which the default paths
+// are relative to.
 package main
 
 import (

@@ -81,7 +81,6 @@ type CodeVerifier = auth.OIDCCodeVerifier
 // token endpoint URL is unreachable, reported as [ErrExchange] — and returns
 // before the nil verifier is ever consulted.
 type Provider struct {
-	provider *gooidc.Provider
 	verifier *gooidc.IDTokenVerifier
 	oauth2   oauth2.Config
 	config   Config
@@ -155,7 +154,6 @@ func NewProvider(ctx context.Context, cfg Config) (*Provider, error) {
 	}
 
 	return &Provider{
-		provider: provider,
 		verifier: verifier,
 		config:   cfg,
 		oauth2:   oauth2Cfg,
