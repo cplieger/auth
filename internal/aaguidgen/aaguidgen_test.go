@@ -76,8 +76,8 @@ func TestGenerate_merges_extras(t *testing.T) {
 	if !want || strings.Contains(string(out.Source), covered.Name+`"`) {
 		t.Errorf("Generate source does not give %s the list's name:\n%s", covered.UUID, out.Source)
 	}
-	if !slices.Equal(out.Covered, []Entry{covered}) {
-		t.Errorf("Generate Covered = %v, want %v", out.Covered, []Entry{covered})
+	if !slices.Equal(out.Covered, []entry{covered}) {
+		t.Errorf("Generate Covered = %v, want %v", out.Covered, []entry{covered})
 	}
 	if !slices.Equal(out.Kept, extraEntries[1:]) {
 		t.Errorf("Generate Kept = %v, want %v", out.Kept, extraEntries[1:])
@@ -85,7 +85,7 @@ func TestGenerate_merges_extras(t *testing.T) {
 	if len(out.Table) != 4 {
 		t.Errorf("Generate table has %d entries, want 4", len(out.Table))
 	}
-	if !slices.IsSortedFunc(out.Table, func(a, b Entry) int { return strings.Compare(a.UUID, b.UUID) }) {
+	if !slices.IsSortedFunc(out.Table, func(a, b entry) int { return strings.Compare(a.UUID, b.UUID) }) {
 		t.Errorf("Generate table is not sorted by AAGUID: %v", out.Table)
 	}
 	var rows []string
@@ -313,7 +313,7 @@ func TestExtraEntries_are_valid(t *testing.T) {
 			t.Errorf("extraEntries name %q for %s: %v", e.Name, e.UUID, err)
 		}
 	}
-	if !slices.IsSortedFunc(extraEntries, func(a, b Entry) int { return strings.Compare(a.UUID, b.UUID) }) {
+	if !slices.IsSortedFunc(extraEntries, func(a, b entry) int { return strings.Compare(a.UUID, b.UUID) }) {
 		t.Errorf("extraEntries is not sorted by AAGUID")
 	}
 }
