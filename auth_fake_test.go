@@ -12,7 +12,6 @@ type fakeSessionStore struct {
 	users    map[int64]*User
 	sessions map[string]*Session // keyed by TokenHash
 	apiKeys  map[string]*Key     // keyed by KeyHash
-	passkeys []PasskeyCredential
 	nextID   int64
 	mu       sync.Mutex
 }
@@ -132,38 +131,4 @@ func (f *fakeSessionStore) CleanupExpiredSessions(_ context.Context, now time.Ti
 		}
 	}
 	return deleted, nil
-}
-
-func (f *fakeSessionStore) CreatePasskey(_ context.Context, c *PasskeyCredential) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if c.ID == 0 {
-		c.ID = f.nextID
-		f.nextID++
-	}
-	f.passkeys = append(f.passkeys, *c)
-	return nil
-}
-
-func (f *fakeSessionStore) PasskeyByCredentialID(_ context.Context, credID []byte) (*PasskeyCredential, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for i := range f.passkeys {
-		if bytesEqual(f.passkeys[i].CredentialID, credID) {
-			return new(f.passkeys[i]), nil
-		}
-	}
-	return nil, nil
-}
-
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

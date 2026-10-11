@@ -89,6 +89,8 @@ type Checker interface {
 }
 
 // Compile-time assertion that *RateLimiter satisfies Checker.
+//
+//deadset:ignore DS1204 -- Checker is published API that consumers declare their limiter fields with; this keeps RateLimiter satisfying it.
 var _ Checker = (*RateLimiter)(nil)
 
 // RateLimiter tracks failed authentication attempts per IP and per account

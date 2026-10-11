@@ -1,0 +1,11 @@
+{
+  "description": "Adjudications for github.com/cplieger/auth/v6.",
+  "ignore": [
+    {
+      "code": "DS1004",
+      "symbol": "go://github.com/cplieger/auth/v6/webauthn#aaguidListCommit",
+      "path": "webauthn/aaguids_source.go",
+      "reason": "go generate reads this pin by parsing the file, and Renovate bumps it."
+    }
+  ]
+}

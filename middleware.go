@@ -28,7 +28,6 @@ type AuthenticatorStore interface {
 // Authenticator resolves an HTTP request to an authenticated user.
 // Create with [New].
 type Authenticator struct {
-	store            AuthenticatorStore
 	defaultVerifiers []CredentialVerifier
 	cfg              authConfig
 	// bypassWarned dedupes the loud production-safety warning: it fires on
@@ -54,7 +53,7 @@ func New(store AuthenticatorStore, opts ...Option) (*Authenticator, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
-	a := &Authenticator{store: store, cfg: cfg}
+	a := &Authenticator{cfg: cfg}
 	if cfg.bypass != nil {
 		// Installation alone is not bypass: the hook may be (and usually is)
 		// inactive. The WARN fires once, on the first actually-granted
