@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
   "lastUpdate": 1791931757354,
-  "repoUrl": "https://github.com/cplieger/ci",
+  "repoUrl": "https://github.com/cplieger/auth",
   "entries": {
     "Benchmark": [
       {
@@ -694,10 +694,10 @@ window.BENCHMARK_DATA = {
             "username": "web-flow",
             "email": "noreply@github.com"
           },
-          "id": "c0fd11f07f039f4aba63c4e461884a9f652b5193",
-          "message": "chore(deps): update module golang.org/x/exp to v0.0.0-20261013213113-2ab7f3cbc5fb (#810)\n\nCo-authored-by: tribble-trouble[bot] <338123824+tribble-trouble[bot]@users.noreply.github.com>",
-          "timestamp": "2026-10-13T22:10:39Z",
-          "url": "https://github.com/cplieger/ci/commit/c0fd11f07f039f4aba63c4e461884a9f652b5193"
+          "id": "a3e5f966afad0e074d647d4e233610663fb29799",
+          "message": "chore(deps): update passkey-authenticator-aaguids digest to 12285f5 (#574)\n\nchore(deps): update passkey-authenticator-aaguids digest to 12285f5\n\nCo-authored-by: tribble-trouble[bot] <338123824+tribble-trouble[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-13T15:08:17Z",
+          "url": "https://github.com/cplieger/auth/commit/a3e5f966afad0e074d647d4e233610663fb29799"
         },
         "date": 1791931757107,
         "tool": "customSmallerIsBetter",
