@@ -5,6 +5,9 @@
   "0ea242b4-43c4-4a1b-8b17-dd6d0b6baec6": {
     "name": "Keeper"
   },
+  "16a5a15d-7244-4563-856d-a5167d8b9783": {
+    "name": "Pleasant Password Server"
+  },
   "17290f1e-c212-34d0-1423-365d729f09d9": {
     "name": "Thales PIN iOS SDK"
   },
@@ -79,6 +82,9 @@
   },
   "891494da-2c90-4d31-a9cd-4eab0aed1309": {
     "name": "Sésame"
+  },
+  "93fea28e-9b08-41d0-b663-20c36b008e70": {
+    "name": "Share Credentials"
   },
   "9addb28c-b46f-4402-808f-019651441ff3": {
     "name": "KeePassPasskey"
