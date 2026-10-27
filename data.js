@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792536602323,
-  "repoUrl": "https://github.com/cplieger/auth",
+  "lastUpdate": 1793141144251,
+  "repoUrl": "https://github.com/cplieger/ci",
   "entries": {
     "Benchmark": [
       {
@@ -889,6 +889,112 @@ window.BENCHMARK_DATA = {
             "name": "BenchmarkRateLimiter_parallel",
             "value": 690.8,
             "range": "± 18.85",
+            "unit": "ns/op",
+            "extra": "10 samples, median"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "tribble-trouble[bot]",
+            "username": "tribble-trouble[bot]",
+            "email": "338123824+tribble-trouble[bot]@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "a4adc2450f849e94a70171386398350c33f7b66f",
+          "message": "chore(deps): update cplieger/ci digest to a00f6a5 (#890)\n\nCo-authored-by: tribble-trouble[bot] <338123824+tribble-trouble[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-27T02:08:25Z",
+          "url": "https://github.com/cplieger/ci/commit/a4adc2450f849e94a70171386398350c33f7b66f"
+        },
+        "date": 1793141144086,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "BenchmarkAuthenticate/api_key_header - B/op",
+            "value": 536,
+            "range": "± 0",
+            "unit": "B/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/api_key_header - allocs/op",
+            "value": 6,
+            "range": "± 0",
+            "unit": "allocs/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/api_key_header",
+            "value": 525.15,
+            "range": "± 3.2",
+            "unit": "ns/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/no_credentials - B/op",
+            "value": 24,
+            "range": "± 0",
+            "unit": "B/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/no_credentials - allocs/op",
+            "value": 1,
+            "range": "± 0",
+            "unit": "allocs/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/no_credentials",
+            "value": 70.87,
+            "range": "± 2.41",
+            "unit": "ns/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/session_cookie - B/op",
+            "value": 688,
+            "range": "± 0",
+            "unit": "B/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/session_cookie - allocs/op",
+            "value": 7,
+            "range": "± 0",
+            "unit": "allocs/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkAuthenticate/session_cookie",
+            "value": 730.95,
+            "range": "± 32.75",
+            "unit": "ns/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkRateLimiter_parallel - B/op",
+            "value": 241,
+            "range": "± 30.5",
+            "unit": "B/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkRateLimiter_parallel - allocs/op",
+            "value": 2,
+            "range": "± 0",
+            "unit": "allocs/op",
+            "extra": "10 samples, median"
+          },
+          {
+            "name": "BenchmarkRateLimiter_parallel",
+            "value": 665.95,
+            "range": "± 29.5",
             "unit": "ns/op",
             "extra": "10 samples, median"
           }
