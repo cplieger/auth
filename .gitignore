@@ -19,7 +19,7 @@ go.work.sum
 .idea/
 .vscode/
 
-# Kiro skill artifacts (app-review, judgement, steering-maintenance)
+# Local agent state
 **/.app-review/
 **/.judgement/
 **/.steering-maintenance/
