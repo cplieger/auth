@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
   "lastUpdate": 1794350793462,
-  "repoUrl": "https://github.com/cplieger/ci",
+  "repoUrl": "https://github.com/cplieger/auth",
   "entries": {
     "Benchmark": [
       {
@@ -1109,19 +1109,19 @@ window.BENCHMARK_DATA = {
       {
         "commit": {
           "author": {
-            "name": "Christopher Plieger",
-            "username": "cplieger",
-            "email": "917744+cplieger@users.noreply.github.com"
+            "name": "tribble-trouble[bot]",
+            "username": "tribble-trouble[bot]",
+            "email": "338123824+tribble-trouble[bot]@users.noreply.github.com"
           },
           "committer": {
             "name": "GitHub",
             "username": "web-flow",
             "email": "noreply@github.com"
           },
-          "id": "f40d4941f84982c89b2289176113db1edfb4bffe",
-          "message": "feat: publish each bundled Grafana dashboard, not only the first (#1032)\n\n## Release note\n\nA repository can now ship more than one Grafana dashboard. Beside `grafana-dashboard.json`, each root `grafana-dashboard-<suffix>.json` is checked on every pull request and published with the release as `ghcr.io/<owner>/<repo>/dashboard-<suffix>:<version>`. The suffix is lowercase letters and digits joined by single hyphens, and any other `grafana-dashboard-*.json` fails the check and the release with an error naming the file. A repository with one dashboard sees no change.",
-          "timestamp": "2026-11-10T21:51:58Z",
-          "url": "https://github.com/cplieger/ci/commit/f40d4941f84982c89b2289176113db1edfb4bffe"
+          "id": "54c7e21e906b9a4737e0b57b28b57089d674f66d",
+          "message": "chore(sync): synced file(s) with cplieger/ci (#727)\n\nCo-authored-by: tribble-trouble[bot] <338123824+tribble-trouble[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-10T22:06:14Z",
+          "url": "https://github.com/cplieger/auth/commit/54c7e21e906b9a4737e0b57b28b57089d674f66d"
         },
         "date": 1794350793116,
         "tool": "customSmallerIsBetter",
