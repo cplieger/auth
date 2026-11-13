@@ -1,10 +1,13 @@
 # auth
 
+> Superseded by [cplieger/access](https://github.com/cplieger/access): the Go module `github.com/cplieger/access` and the npm package `@cplieger/access`.
+> **Archived 2026-11-13. This repository is read-only. The published Go module and package stay available.**
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/cplieger/auth/v6.svg)](https://pkg.go.dev/github.com/cplieger/auth/v6) [![Go version](https://img.shields.io/github/go-mod/go-version/cplieger/auth)](https://github.com/cplieger/auth/blob/main/go.mod) [![Mutation](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/cplieger/auth/badges/mutation.json)](https://github.com/cplieger/auth/issues?q=label%3Agremlins-tracker)
 
 auth gives your Go web service its login building blocks: Argon2id passwords, passkeys, OIDC sign-in, sessions, API keys and CSRF tokens. You write the HTTP handlers and the storage.
 
-It replaces the hashing, token, cookie and passkey code you would otherwise assemble around `net/http`. It reads no environment variables, and every setting lives on the value you construct. It needs Go 1.27 or later and is licensed under Apache-2.0. It has five direct dependencies at run time: `golang.org/x/crypto`, `golang.org/x/oauth2`, `golang.org/x/text`, `go-webauthn/webauthn` and `coreos/go-oidc`.
+It replaces the hashing, token, cookie and passkey code you would otherwise assemble around `net/http`. It reads no environment variables, and every setting lives on the value you construct. It is licensed under Apache-2.0. It has five direct dependencies at run time: `golang.org/x/crypto`, `golang.org/x/oauth2`, `golang.org/x/text`, `go-webauthn/webauthn` and `coreos/go-oidc`.
 
 ## Why use it
 
